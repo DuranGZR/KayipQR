@@ -1,6 +1,16 @@
 # Railway kurulumu
 
-Bu belge Railway'de **Frontend + Backend + Worker + PostgreSQL + Redis + Bucket** kurulumu içindir. Kaynaklar bu kod değişikliğiyle hesabınızda otomatik oluşturulmaz. Projenin web tasarımı değişmez.
+## Düşük trafikli, Redis'siz kurulum (seçilen yapı)
+
+`railway.env.example` artık **tek Backend + PostgreSQL + özel Bucket** profilini kullanır. Frontend ayrı yayımlanır. Redis ve ayrı Worker servisi oluşturulmaz. `SINGLE_INSTANCE_MODE=true`, boş `REDIS_URL`, `APP_ROLE=web` ve `RUN_BACKGROUND_TASKS=true` birlikte kullanılmalıdır. Backend yalnızca **bir replica ve bir uvicorn process** çalıştırmalıdır. İstek limitleri ve canlı bağlantılar bu process'in belleğinde tutulur; yeniden başlatıldığında limit sayaçları sıfırlanır. Mesajlar veritabanında kalır. E-posta outbox'ı ve saatlik dosya bakımı aynı backend içinde çalışır.
+
+`CHAT_PHOTO_RETENTION_DAYS=30` yalnızca sohbet fotoğraflarına uygulanır. Süre mesajın gönderildiği tarihten hesaplanır; saatlik bakımda en fazla 100 eski mesajın fotoğraf bağlantısı kaldırılır ve saklama süresinin dolduğu yazılır. Mesaj metni ve tarihi korunur. Profil/eşya görselleri kapsam dışıdır; daha yeni bir mesajda veya profil/eşyada kullanılan ortak dosya fiziksel olarak silinmez. Dosya silme hataları sonraki yetim dosya bakımında yeniden denenir. Bakım sırasında uygulama kapalıysa temizlik tekrar çalıştıktan sonra devam eder; yoğun birikimde birden fazla tur gerekir. Bucket'a bütün dosyaları yaşına göre silen genel bir lifecycle kuralı eklemeyin.
+
+Bu profil sürekli çalışan bir backend içindir; Vercel gibi istek ömrüne bağlı fonksiyonlara taşıma düzenlemesi değildir. Aşağıdaki Worker/Redis ve replica adımları yalnızca ileride birden çok backend kopyasına geçildiğinde uygulanır. Kaynaklar bu kod değişikliğiyle hesabınızda otomatik oluşturulmaz.
+
+## Birden çok backend için alternatif kurulum
+
+Belgenin devamı **Frontend + Backend + Worker + PostgreSQL + Redis + Bucket** alternatifi içindir. Bu yapıda `SINGLE_INSTANCE_MODE=false`, `REDIS_URL=${{Redis.REDIS_URL}}`, `RUN_BACKGROUND_TASKS=false` ayarlarını kullanın.
 
 ## 1. Servisleri hazırlama
 
@@ -77,7 +87,7 @@ python -m pip install -r requirements.lock -r requirements-dev.txt
 python -m pytest tests -q
 ```
 
-Varsayılan testler geçici SQLite ve izole dosyalar kullanır; e-posta göndermez. `TEST_DATABASE_URL` ile yalnızca adı test içeren izole PostgreSQL seçilebilir. `TEST_REDIS_URL` varsa replica/limit testleri gerçek Redis kullanır; yoksa fakeredis kullanılır. Gerçek S3 protokol testi `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` tanımlanınca CI'deki izole MinIO'ya karşı çalışır; aksi halde atlanır. MinIO burada yalnızca test aracıdır, production mimarisinin parçası değildir.
+Varsayılan testler geçici SQLite ve izole dosyalar kullanır; e-posta göndermez. `TEST_DATABASE_URL` ile yalnızca adı test içeren izole PostgreSQL seçilebilir. `TEST_REDIS_URL` varsa replica/limit testleri gerçek Redis kullanır; yoksa fakeredis kullanılır. Gerçek S3 protokol testi `TEST_S3_ENDPOINT`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY` tanımlanınca seçilen izole S3 test servisine karşı çalışır; aksi halde atlanır. Varsayılan CI, PostgreSQL fotoğraf depolamasını doğrular; S3 servisi başlatmaz.
 
 `.github/workflows/backend.yml`, PostgreSQL + Redis + S3 protokol testlerini ve iki gerçek backend process'iyle fonksiyon/yük smoke testini çalıştıracak şekilde tanımlıdır. Workflow dosyasının bulunması, bu makinede CI'nin çalıştığı anlamına gelmez.
 

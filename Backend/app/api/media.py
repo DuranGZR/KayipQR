@@ -1,7 +1,7 @@
 from pathlib import Path
 import re
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy import select
 from app.core.config import settings
 from app.core.media import valid_signature
@@ -29,6 +29,10 @@ async def get_upload(filename: str, expires: str = Query(""), signature: str = Q
         if not public:
             raise HTTPException(status_code=403, detail="Görsel için geçerli erişim bağlantısı gerekli.")
     headers = {"Cache-Control": "public, max-age=300" if public else "private, no-store", "Referrer-Policy": "no-referrer"}
+    if settings.STORAGE_BACKEND == "database":
+        from app.services.database_storage import read_image
+        content, content_type = await read_image(filename)
+        return Response(content, media_type=content_type, headers={**headers, "X-Content-Type-Options": "nosniff"})
     if settings.STORAGE_BACKEND == "s3":
         from app.services.object_storage import download_url
         # Never cache a redirect beyond the lifetime of its S3 capability.

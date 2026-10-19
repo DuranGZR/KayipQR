@@ -43,6 +43,8 @@ import {
   ConversationDetailData,
 } from "@/lib/api";
 import { decodeHtmlEntities } from "@/lib/utils";
+import { startVisiblePolling } from "@/lib/visiblePolling";
+import { CHAT_WEBSOCKETS_ENABLED } from "@/lib/api";
 
 function formatSmartTime(isoString?: string): string {
   if (!isoString) return "";
@@ -65,6 +67,8 @@ function MessagesContent() {
 
   const [conversations, setConversations] = useState<ConversationData[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(urlConvId);
+  const activeIdRef = useRef(activeConvId);
+  activeIdRef.current = activeConvId;
   const [activeConvDetails, setActiveConvDetails] = useState<ConversationDetailData | null>(null);
   const latestChat = useRef(activeConvDetails);
   useEffect(() => { latestChat.current = activeConvDetails; }, [activeConvDetails]);
@@ -156,8 +160,7 @@ function MessagesContent() {
 
   useEffect(() => {
     loadConversations(false);
-    const interval = setInterval(() => loadConversations(true), 6000);
-    return () => clearInterval(interval);
+    return startVisiblePolling(() => loadConversations(true), 30000, false);
   }, [loadConversations]);
 
   // Load conversation details when active conversation changes
@@ -165,18 +168,20 @@ function MessagesContent() {
     if (showSpinner) setIsLoadingDetails(true);
     try {
       const details = await chatApi.getDetails(convId);
+      if (activeIdRef.current !== convId) return;
+      const hasNewMessages = details.messages.some(message => !latestChat.current?.messages.some(existing => existing.id === message.id));
       setActiveConvDetails(details);
       // Clear unread badge locally in list
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, unread_count: 0 } : c))
       );
-      setTimeout(() => {
+      if (showSpinner || hasNewMessages) setTimeout(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 80);
     } catch (err) {
       console.error("Failed to load conversation details:", err);
     } finally {
-      if (showSpinner) setIsLoadingDetails(false);
+      if (showSpinner && activeIdRef.current === convId) setIsLoadingDetails(false);
     }
   }, []);
 
@@ -190,7 +195,7 @@ function MessagesContent() {
 
   // Connect Owner WebSocket for Real-Time Messages, Typing Indicator, Read Receipts, Heartbeat & Auto-Reconnect
   useEffect(() => {
-    if (!activeConvId || typeof window === "undefined") return;
+    if (!CHAT_WEBSOCKETS_ENABLED || !activeConvId || typeof window === "undefined") return;
     const token = getAuthToken();
     if (!token) return;
 
@@ -305,12 +310,9 @@ function MessagesContent() {
   // Fallback periodic refresh for active conversation in case WS drops
   useEffect(() => {
     if (!activeConvId) return;
-    const timer = setInterval(() => {
-      if (!isWsConnected) {
-        fetchActiveDetails(activeConvId, false);
-      }
-    }, 7000);
-    return () => clearInterval(timer);
+    return startVisiblePolling(async () => {
+      if (!isWsConnected) await fetchActiveDetails(activeConvId, false);
+    }, 15000, false);
   }, [activeConvId, isWsConnected, fetchActiveDetails]);
 
   const handleSelectConv = (id: string) => {

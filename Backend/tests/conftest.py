@@ -21,6 +21,7 @@ os.environ.update(
     S3_ACCESS_KEY_ID="", S3_SECRET_ACCESS_KEY="",
     RUN_BACKGROUND_TASKS="false", RUN_MIGRATIONS="false", APP_ROLE="web", PROXY_MODE="explicit",
     ENABLE_EXTERNAL_GEOIP="false",
+    SERVERLESS_MODE="false", SINGLE_INSTANCE_MODE="false", CRON_SECRET="",
 )
 
 
@@ -32,12 +33,14 @@ async def isolate_runtime_state():
     from app.db.session import AsyncSessionLocal
     from app.models.email_outbox import EmailOutbox
     from app.models.upload_asset import UploadAsset, StorageQuota
+    from app.models.runtime_state import RuntimeBucket
     from sqlalchemy import delete
     rate_limiter.requests.clear()
     email_service._scan_cooldown_cache.clear()
     await init_db()
     async with AsyncSessionLocal() as db:
         await db.execute(delete(EmailOutbox))
+        await db.execute(delete(RuntimeBucket))
         await db.execute(delete(UploadAsset))
         await db.execute(delete(StorageQuota))
         await db.commit()

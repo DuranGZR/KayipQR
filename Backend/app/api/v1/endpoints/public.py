@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.core.rate_limiter import rate_limiter
+from app.core.config import settings
 from app.core.security import sanitize_message_content
 from app.db.session import get_db, AsyncSessionLocal
 from app.models.item import Item
@@ -130,14 +131,11 @@ async def get_public_item_by_qr(
         cf_city = raw_city.strip()[:100] if raw_city else None
         cf_country = raw_country.strip()[:100] if raw_country else None
 
-    background_tasks.add_task(
-        record_scan_in_background,
-        item.id,
-        client_ip,
-        user_agent,
-        cf_city,
-        cf_country,
-    )
+    if settings.SERVERLESS_MODE:
+        # Persist scan + outbox before response middleware drains email.
+        await record_scan_in_background(item.id, client_ip, user_agent, cf_city, cf_country)
+    else:
+        background_tasks.add_task(record_scan_in_background, item.id, client_ip, user_agent, cf_city, cf_country)
 
     return PublicItemResponse(
         unique_code=code_clean,

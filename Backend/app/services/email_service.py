@@ -30,6 +30,13 @@ class EmailService:
         Prevents spamming the user's inbox if a QR code is scanned repeatedly in a short time.
         Suppresses duplicate scan emails within the cooldown window (default 10 minutes).
         """
+        if settings.SERVERLESS_MODE:
+            from app.services.runtime_limits import consume_window
+            try:
+                return bool(await consume_window(f"scan-mail:{item_id}", 1, cooldown_seconds))
+            except Exception:
+                logging.getLogger(__name__).exception("Scan email cooldown unavailable")
+                return True
         client = get_redis()
         if client is not None:
             try:

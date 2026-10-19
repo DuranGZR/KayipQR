@@ -46,6 +46,19 @@ def _process_and_sanitize_image_sync(content: bytes) -> tuple[bytes, str]:
     except Exception:
         pass
 
+    if settings.STORAGE_BACKEND == "database":
+        # Bound both dimensions and encoded bytes. EXIF is never copied.
+        img.thumbnail((1280, 1280), Image.Resampling.LANCZOS)
+        img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+        for _ in range(4):
+            for quality in (80, 65, 50):
+                output = io.BytesIO()
+                img.save(output, format="WEBP", quality=quality, method=4)
+                if output.tell() <= settings.DB_IMAGE_MAX_BYTES:
+                    return output.getvalue(), ".webp"
+            img.thumbnail((max(1, int(img.width * .75)), max(1, int(img.height * .75))), Image.Resampling.LANCZOS)
+        raise HTTPException(status_code=413, detail="Görsel yeterince küçültülemedi. Daha küçük bir fotoğraf seçin.")
+
     # Resize if overly large to prevent storage/memory bloat
     if img.width > MAX_IMAGE_DIMENSION or img.height > MAX_IMAGE_DIMENSION:
         img.thumbnail((MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION), Image.Resampling.LANCZOS)
@@ -99,6 +112,10 @@ class StorageService:
 
         # 3. Save clean sanitized file to disk
         unique_filename = f"{uuid.uuid4().hex}{ext}"
+        if settings.STORAGE_BACKEND == "database":
+            from app.services.database_storage import save_image
+            await save_image(unique_filename, cleaned_content, "image/webp")
+            return sign_upload(unique_filename)
         if settings.STORAGE_BACKEND == "s3":
             from app.services.object_storage import save_object
             content_type = {".jpg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}[ext]
@@ -189,7 +206,10 @@ class StorageService:
         if msg_ref.scalars().first():
             return
 
-        if settings.STORAGE_BACKEND == "s3":
+        if settings.STORAGE_BACKEND == "database":
+            from app.services.database_storage import delete_image
+            await delete_image(filename)
+        elif settings.STORAGE_BACKEND == "s3":
             from app.services.object_storage import delete_object
             await delete_object(filename)
         else:
@@ -213,7 +233,7 @@ async def cleanup_orphan_uploads() -> int:
     import time
     from pathlib import Path
     from app.db.session import AsyncSessionLocal
-    if settings.STORAGE_BACKEND == "s3":
+    if settings.STORAGE_BACKEND in ("s3", "database"):
         from datetime import datetime, timedelta, timezone
         from app.models.upload_asset import UploadAsset
         from app.models.user import User

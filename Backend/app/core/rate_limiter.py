@@ -38,6 +38,12 @@ class RateLimiter:
         """
         direct_host = request.client.host if (request.client and request.client.host) else "127.0.0.1"
 
+        if settings.PROXY_MODE == "vercel" and os.getenv("VERCEL") == "1":
+            try:
+                return str(ipaddress.ip_address(request.headers.get("x-vercel-forwarded-for", "")))
+            except ValueError:
+                return direct_host
+
         # Opt-in platform boundary: Railway edge overwrites X-Real-IP. Never use
         # caller-provided XFF/CF headers in this mode; do not expose a TCP bypass.
         if settings.PROXY_MODE == "railway" and os.getenv("RAILWAY_PROJECT_ID") and request.headers.get("x-railway-edge"):
@@ -78,6 +84,15 @@ class RateLimiter:
         client_ip = self.get_client_ip(request)
         scope = key_prefix or request.url.path
         bucket_key = f"{scope}:{identity or client_ip}"
+        if settings.SERVERLESS_MODE:
+            from app.services.runtime_limits import consume_window
+            try:
+                retry = await consume_window("limit:" + bucket_key, max_requests, window_seconds)
+            except Exception:
+                raise HTTPException(status_code=503, detail="İstek kontrolü geçici olarak kullanılamıyor.", headers={"Retry-After": "5"})
+            if retry:
+                self.reject(retry)
+            return
         client = get_redis()
         if client is not None:
             key = redis_key("limit:" + hashlib.sha256(bucket_key.encode()).hexdigest())

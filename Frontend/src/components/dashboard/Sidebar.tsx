@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/SketchBorders";
 import { authApi, itemsApi, getAuthToken, getStoredUser, clearAuthTokens, User } from "@/lib/api";
 import { NotificationDropdown } from "@/components/dashboard/NotificationDropdown";
+import { startVisiblePolling } from "@/lib/visiblePolling";
 
 interface SidebarProps {
   itemsCount?: number;
@@ -52,8 +53,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       if (!getAuthToken() || document.hidden) return;
       try { const stats = await itemsApi.getStats(); if (!disposed) setUnreadFallback(stats.unread_messages); } catch {}
     };
-    update(); const timer = setInterval(update, 15000);
-    return () => { disposed = true; clearInterval(timer); };
+    const stop = startVisiblePolling(update, 60000);
+    return () => { disposed = true; stop(); };
   }, [unreadCount]);
 
   useEffect(() => {

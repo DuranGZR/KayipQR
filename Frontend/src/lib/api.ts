@@ -1,4 +1,5 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+export const CHAT_WEBSOCKETS_ENABLED = process.env.NEXT_PUBLIC_CHAT_TRANSPORT !== "polling";
 
 export interface User {
   id: string;
@@ -396,7 +397,7 @@ async function fetchConversationHistory(path: string, authenticated: boolean): P
     if (authenticated) handleAuthFailureIfNeeded(res);
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
-      throw new Error(typeof error.detail === "string" ? error.detail : "Sohbet yüklenemedi.");
+      throw Object.assign(new Error(typeof error.detail === "string" ? error.detail : "Sohbet yüklenemedi."), { status: res.status });
     }
     const page: ConversationDetailData = await res.json();
     first ??= page;
@@ -625,8 +626,30 @@ export const getMediaUrl = (path?: string | null): string => {
   return `${backendBase}${path.startsWith("/") ? "" : "/"}${path}`;
 };
 
+async function prepareUpload(file: File): Promise<File> {
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("JPG, PNG veya WebP fotoğraf seçin.");
+  if (file.size > 20 * 1024 * 1024) throw new Error("Fotoğraf en fazla 20 MB olabilir.");
+  if (file.size <= 3 * 1024 * 1024) return file;
+  const bitmap = await createImageBitmap(file);
+  try {
+    if (bitmap.width * bitmap.height > 25_000_000) throw new Error("Fotoğrafın çözünürlüğü çok yüksek.");
+    const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Fotoğraf işlenemedi.");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
+      value => value ? resolve(value) : reject(new Error("Fotoğraf küçültülemedi.")), "image/webp", 0.8,
+    ));
+    if (blob.size > 3 * 1024 * 1024) throw new Error("Daha küçük bir fotoğraf seçin.");
+    return new File([blob], "photo.webp", { type: blob.type });
+  } finally { bitmap.close(); }
+}
+
 export async function uploadImage(file: File): Promise<{ url: string }> {
-  if (file.size > 5 * 1024 * 1024) throw new Error("Fotoğraf en fazla 5 MB olabilir.");
+  file = await prepareUpload(file);
   const form = new FormData(); form.append("file", file);
   const token = getAuthToken();
   const response = await fetch(`${API_BASE}/uploads`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
@@ -648,6 +671,7 @@ export const publicApi = {
   },
 
   uploadImage: async (file: File): Promise<{ url: string }> => {
+    file = await prepareUpload(file);
     const formData = new FormData();
     formData.append("file", file);
 

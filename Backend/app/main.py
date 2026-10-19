@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.security import decode_access_token, token_matches_user
 from sqlalchemy import select, text
 from fastapi.responses import JSONResponse
+from starlette.background import BackgroundTasks
 from app.models.conversation import Conversation
 from app.models.item import Item
 from app.models.user import User
@@ -37,6 +38,8 @@ async def lifespan(app: FastAPI):
         while True:
             await asyncio.sleep(3600)
             try:
+                from app.services.media_retention import expire_chat_photos
+                await expire_chat_photos()
                 await cleanup_orphan_uploads()
             except Exception:
                 logging.getLogger(__name__).exception("Upload cleanup failed")
@@ -68,6 +71,34 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+from app.api.maintenance import router as maintenance_router
+app.include_router(maintenance_router)
+
+
+@app.middleware("http")
+async def serverless_email_delivery(request: Request, call_next):
+    # ASGI awaits response background work within this invocation. The SQL
+    # outbox also survives interruption; do not expose mail latency to clients
+    # (especially account enumeration through forgot-password response timing).
+    response = await call_next(request)
+    if settings.SERVERLESS_MODE and response.status_code < 400 and (
+        request.method == "POST" or request.url.path.startswith(settings.API_V1_STR + "/public/q/")
+    ):
+        async def dispatch():
+            from app.services.outbox_service import deliver_pending
+            try:
+                await asyncio.wait_for(deliver_pending(max_messages=3), timeout=15)
+            except Exception:
+                logging.getLogger(__name__).warning("Email delivery deferred to a later request or daily cron")
+        background = BackgroundTasks()
+        if response.background is not None:
+            background.add_task(response.background)
+        background.add_task(dispatch)
+        response.background = background
+    if settings.SERVERLESS_MODE and request.url.path not in ("/health", "/ready"):
+        response.headers["Cache-Control"] = "private, no-store"
+    return response
+
 # 1. Security Headers Middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
@@ -93,7 +124,8 @@ app.add_middleware(
 )
 
 # 3. Serve public assets and capability-protected chat uploads.
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+if settings.STORAGE_BACKEND == "local":
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 app.include_router(media_router)
 
 # 4. Include API Router
@@ -124,6 +156,10 @@ async def readiness_check():
             await asyncio.wait_for(db.execute(select(EmailOutbox.id).limit(1)), timeout=3)
             from app.models.upload_asset import UploadAsset
             await asyncio.wait_for(db.execute(select(UploadAsset.filename).limit(1)), timeout=3)
+            if settings.SERVERLESS_MODE:
+                from app.models.runtime_state import RuntimeBucket, UploadContent
+                await asyncio.wait_for(db.execute(select(RuntimeBucket.key).limit(1)), timeout=3)
+                await asyncio.wait_for(db.execute(select(UploadContent.filename).limit(1)), timeout=3)
         from app.core.redis import get_redis
         redis = get_redis()
         if redis is not None:
@@ -158,6 +194,9 @@ async def websocket_chat_endpoint(
     - Ping/Pong: {"type": "ping"}
     """
     from app.core.rate_limiter import rate_limiter
+    if settings.SERVERLESS_MODE:
+        await websocket.close(code=1008)
+        return
     try:
         await rate_limiter.check_rate_limit(websocket, max_requests=30, window_seconds=60, key_prefix="ws_connect")
     except HTTPException:

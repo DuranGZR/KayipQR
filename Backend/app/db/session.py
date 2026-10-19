@@ -19,10 +19,13 @@ if "postgresql" in settings.DATABASE_URL:
         "pool_recycle": 3600,
     })
 
-if settings.ENVIRONMENT == "test":
+if settings.ENVIRONMENT == "test" or settings.SERVERLESS_MODE:
     for key in ("pool_size", "max_overflow"):
         engine_kwargs.pop(key, None)
     engine_kwargs["poolclass"] = NullPool
+
+if settings.SERVERLESS_MODE and "postgresql" in settings.DATABASE_URL:
+    engine_kwargs["connect_args"] = {"prepared_statement_cache_size": 0, "statement_cache_size": 0}
 
 engine = create_async_engine(
     settings.DATABASE_URL,

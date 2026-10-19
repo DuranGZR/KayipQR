@@ -15,6 +15,7 @@ import {
 import { WobblyCardFrame } from "@/components/ui/SketchBorders";
 import { notificationsApi, getAuthToken, NotificationData } from "@/lib/api";
 import { decodeHtmlEntities } from "@/lib/utils";
+import { startVisiblePolling } from "@/lib/visiblePolling";
 
 export const NotificationDropdown: React.FC = () => {
   const router = useRouter();
@@ -61,9 +62,7 @@ export const NotificationDropdown: React.FC = () => {
   };
 
   useEffect(() => {
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 8000);
-    return () => clearInterval(interval);
+    return startVisiblePolling(loadNotifications, 60000);
   }, []);
 
   // Close on outside click

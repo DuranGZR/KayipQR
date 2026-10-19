@@ -27,14 +27,14 @@ KayıpQR bir GPS takip cihazı değildir; eşyanın bulunmasını veya geri dön
 - **QR tasarım stüdyosu:** Sekiz tasarım, renk ve etiket metni seçenekleri; PNG/SVG indirme, A4 yerleşimleri ve yazdırma/PDF kaydetme akışı.
 - **Eşya yönetimi:** Güvende, kayıp ve teslim alındı durumları; etiket yayınını duraklatma; bilgileri mevcut QR bağlantısını değiştirmeden güncelleme.
 - **Bulan kişi sayfası:** Üyeliksiz ilk mesaj, fotoğraf ekleme, isteğe bağlı konum paylaşımı ve Türkçe/İngilizce arayüz.
-- **Canlı sohbet:** WebSocket üzerinden mesajlaşma, yazıyor ve okundu bilgisi; bağlantı yenilendiğinde geçmişi eşitleme.
+- **Sohbet:** Fotoğraf, konum ve okundu bilgisi; Vercel profilinde görünür sekmede periyodik güncelleme. Sürekli çalışan backend için WebSocket seçeneği.
 - **Tarama geçmişi:** Tarama zamanı, cihaz bilgileri ve mevcutsa yaklaşık bölge; harici GeoIP varsayılan olarak kapalıdır.
 - **Bildirimler:** Site içi bildirim listesi, desteklenen tarayıcılarda izinle açık sayfa bildirimi ve tercihe bağlı e-posta.
 - **Mobil web:** İki sütunlu eşya kartları, ilk altı karttan sonra “Hepsini göster”, açılır hesap menüsü ve dokunmaya uygun kontroller.
 
 ### Bildirimlerin sınırları
 
-Sohbet mesajları canlı bağlantıyla iletilir. Site içindeki zil yaklaşık sekiz saniyede bir güncellenir. Tarayıcı bildirimi destek ve izin gerektirir; site kapalıyken çalışan Web Push altyapısı bulunmaz. E-posta için SMTP veya Resend ayarları ve çalışan bir gönderim süreci gerekir. Yerel varsayılan ayarlar gerçek e-posta göndermez.
+Vercel profilinde açık sohbet yaklaşık 15, konuşma listesi 30, zil 60 saniyede bir güncellenir; gizli sekmelerde kontroller durur. Sohbet fotoğrafları 30 gün sonrasındaki günlük bakımda kaldırılır, yazılı mesajlar kalır. Tarayıcı bildirimi destek ve izin gerektirir; site kapalıyken çalışan Web Push altyapısı bulunmaz. E-posta için Resend veya uygun dağıtımda SMTP ayarları gerekir. Yerel varsayılan ayarlar gerçek e-posta göndermez.
 
 Telefon numarası ve hesap e-postası herkese açık eşya yanıtında yer almaz. Paylaşmayı seçtiğin sahip adı, eşya bilgileri ve mesaj içine kendin yazdığın bilgiler karşı tarafa görünebilir. Mesajlaşma için uçtan uca şifreleme iddiası bulunmaz.
 
@@ -68,15 +68,15 @@ Ana sayfa, masaüstü eşya paneli ve QR stüdyosu görselleri proje sahibinin p
 
 | Katman | Kullanılanlar |
 |---|---|
-| Web arayüzü | Next.js 14 App Router, React 18, TypeScript |
+| Web arayüzü | Next.js 15 App Router, React 18, TypeScript |
 | Tasarım | Tailwind CSS, Framer Motion, Lucide, ortak SVG çerçeveler |
 | API | FastAPI, Pydantic, async SQLAlchemy, Alembic |
 | Kimlik doğrulama | JWT, Argon2id; eski bcrypt hash'leri için geçiş desteği |
 | Veritabanı | Yerelde SQLite, dağıtımda PostgreSQL |
-| Paylaşılan durum | Redis istek limitleri, Pub/Sub ve e-posta tekrar kontrolü |
-| Dosyalar | Yerel geliştirme klasörü veya özel S3 uyumlu Bucket |
-| E-posta | SQL outbox, ayrı worker, Resend HTTPS API veya SMTP |
-| Dağıtım | Dockerfile'lar, Railway yapılandırmaları, GitHub Actions |
+| Paylaşılan durum | Vercel'de PostgreSQL üzerinde ortak istek sınırları |
+| Dosyalar | Vercel'de PostgreSQL içinde sıkıştırılmış WebP; yerelde klasör |
+| E-posta | SQL outbox, Resend HTTPS API; istek içi gönderim ve günlük yeniden deneme |
+| Dağıtım | Vercel yapılandırmaları; alternatif Docker/Railway dosyaları |
 
 ## Mimari
 
@@ -84,17 +84,13 @@ Ana sayfa, masaüstü eşya paneli ve QR stüdyosu görselleri proje sahibinin p
 flowchart LR
     Owner[Eşya sahibi] --> Web[Next.js Frontend]
     Finder[Bulan kişi] --> Web
-    Web -->|HTTP / WebSocket| API[FastAPI Backend]
+    Web -->|HTTP| API[Vercel FastAPI]
     API --> DB[(PostgreSQL)]
-    API <--> Redis[(Redis)]
-    API --> Bucket[Özel S3 Bucket]
-    Worker[E-posta ve bakım worker'ı] --> DB
-    Worker --> Redis
-    Worker --> Bucket
-    Worker --> Mail[Resend / SMTP]
+    Cron[Vercel günlük bakım] --> API
+    API --> Mail[Resend]
 ```
 
-Mesajlar veritabanında saklanır; Redis kalıcı mesaj deposu değildir. Redis, backend kopyaları arasında olayları ve istek limitlerini paylaşır. E-posta işleri veritabanındaki outbox'a yazılır ve worker tarafından alınır. Dosyalar Railway dağıtımında container diski yerine Bucket'ta tutulur.
+Vercel profilinde mesajlar, sıkıştırılmış fotoğraflar, istek sayaçları ve e-posta kuyruğu PostgreSQL'de saklanır. Redis, Bucket ve ayrı worker gerekmez. Kurulum ve mevcut verileri taşıma adımları: [Vercel rehberi](Backend/VERCEL.md).
 
 ## Yerelde çalıştırma
 
@@ -144,6 +140,8 @@ npm run dev
 |---|---|
 | [Backend/.env.example](Backend/.env.example) | Yerel API ayarları |
 | [Frontend/.env.example](Frontend/.env.example) | Frontend'in API, WebSocket ve site adresleri |
+| [Backend/vercel.env.example](Backend/vercel.env.example) | PostgreSQL depolamalı Vercel backend ayarları |
+| [Frontend/vercel.env.example](Frontend/vercel.env.example) | Vercel frontend build ayarları |
 | [Backend/railway.env.example](Backend/railway.env.example) | Railway servis referansları ve production ayarları |
 | [.env.example](.env.example) | Kök Docker Compose değişkenleri |
 
@@ -164,4 +162,4 @@ npm run build
 
 Frontend üretim derlemesini, aynı `.next` klasörünü kullanan geliştirme sunucusu kapalıyken çalıştır.
 
-Backend testleri varsayılan olarak geçici SQLite ve izole test dosyaları kullanır. Gerçek Redis ve S3 protokol testleri ilgili test değişkenlerini gerektirir; S3 servisi yoksa protokol testi atlanır. GitHub Actions yapılandırması PostgreSQL, Redis, izole S3 emülatörü, iki backend process'iyle smoke testi ve Docker kontrolleri içerir. Bir workflow dosyasının bulunması bu kontrollerin geçmiş olduğu anlamına gelmez.
+Backend testleri varsayılan olarak geçici SQLite ve izole test dosyaları kullanır. PostgreSQL testleri CI'de gerçek test veritabanına karşı çalışır. GitHub Actions; Redis'siz HTTP mesajlaşması, PostgreSQL fotoğraf/kota testleri, alternatif Redis üzerinden iki backend testi ve Docker kontrolleri içerir. S3 protokol testi isteğe bağlıdır; test servisi tanımlanmamışsa atlanır. Bir workflow dosyasının bulunması bu kontrollerin geçmiş olduğu anlamına gelmez.

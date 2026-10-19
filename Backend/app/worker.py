@@ -10,6 +10,7 @@ from app.db.session import engine, AsyncSessionLocal, init_db
 from app.models.email_outbox import EmailOutbox
 from app.services.outbox_service import run_dispatcher
 from app.services.storage_service import cleanup_orphan_uploads
+from app.services.media_retention import expire_chat_photos
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ async def run_worker():
     async def maintain_uploads():
         while not stop.is_set():
             try:
+                await expire_chat_photos()
                 await cleanup_orphan_uploads()
             except Exception:
                 logger.exception("Upload maintenance failed; retrying next cycle")

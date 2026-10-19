@@ -38,12 +38,24 @@ async def run(args):
             contact = await client.post(urls[0] + "/api/v1/public/q/" + item.json()["qr_code"]["unique_code"] + "/contact", json={"message": "Isolated test"})
             contact.raise_for_status()
             conv = contact.json()
-            ws_url = urls[0].replace("https://", "wss://").replace("http://", "ws://") + "/ws/chat/" + conv["conversation_id"]
-            async with connect(ws_url, subprotocols=["kayipqr", f"auth.{token}"]) as socket:
+            if args.transport == "polling":
                 sent = await client.post(urls[-1] + "/api/v1/conversations/finder/" + conv["finder_session_token"] + "/messages", json={"content": "Cross-replica delivery"})
                 sent.raise_for_status()
-                event = json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
-                assert event["type"] == "new_message" and event["message"]["id"] == sent.json()["id"]
+                history = await client.get(urls[0] + "/api/v1/conversations/" + conv["conversation_id"], headers=headers)
+                history.raise_for_status()
+                assert sent.json()["id"] in {message["id"] for message in history.json()["messages"]}
+                reply = await client.post(urls[0] + "/api/v1/conversations/" + conv["conversation_id"] + "/messages", headers=headers, json={"content": "Owner reply"})
+                reply.raise_for_status()
+                finder = await client.get(urls[-1] + "/api/v1/conversations/finder/" + conv["finder_session_token"])
+                finder.raise_for_status()
+                assert reply.json()["id"] in {message["id"] for message in finder.json()["messages"]}
+            else:
+                ws_url = urls[0].replace("https://", "wss://").replace("http://", "ws://") + "/ws/chat/" + conv["conversation_id"]
+                async with connect(ws_url, subprotocols=["kayipqr", f"auth.{token}"]) as socket:
+                    sent = await client.post(urls[-1] + "/api/v1/conversations/finder/" + conv["finder_session_token"] + "/messages", json={"content": "Cross-replica delivery"})
+                    sent.raise_for_status()
+                    event = json.loads(await asyncio.wait_for(socket.recv(), timeout=10))
+                    assert event["type"] == "new_message" and event["message"]["id"] == sent.json()["id"]
             slots = asyncio.Semaphore(args.concurrency)
             latencies = []
             statuses = Counter()
@@ -77,4 +89,5 @@ if __name__ == "__main__":
     parser.add_argument("--concurrency", type=int, default=8, choices=range(1, 51), metavar="1..50")
     parser.add_argument("--allow-external", action="store_true")
     parser.add_argument("--max-p95-ms", type=float)
+    parser.add_argument("--transport", choices=("websocket", "polling"), default="websocket")
     asyncio.run(run(parser.parse_args()))

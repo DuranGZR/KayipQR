@@ -19,8 +19,12 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = Field(default=5, ge=0, le=50)
     REDIS_URL: str = ""
     REDIS_PREFIX: str = "kayipqr"
+    SINGLE_INSTANCE_MODE: bool = False  # Explicitly opt into one long-lived web process without Redis.
+    SERVERLESS_MODE: bool = False
+    CRON_SECRET: str = ""
+    CHAT_PHOTO_RETENTION_DAYS: int = Field(default=30, ge=1, le=3650)
     APP_ROLE: Literal["web", "worker"] = "web"
-    RUN_BACKGROUND_TASKS: bool = True  # Local/Compose only; Railway web sets false.
+    RUN_BACKGROUND_TASKS: bool = True  # Single web process, or use a separate worker.
     RUN_MIGRATIONS: bool = False  # Railway uses a pre-deploy command instead.
 
     # URLs
@@ -32,7 +36,8 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = Field(default=5, ge=1, le=20)
     MAX_ACTIVE_REQUESTS: int = Field(default=200, ge=10, le=10000)
     MAX_STORAGE_SIZE_MB: int = Field(default=1024, ge=20)
-    STORAGE_BACKEND: Literal["local", "s3"] = "local"
+    STORAGE_BACKEND: Literal["local", "s3", "database"] = "local"
+    DB_IMAGE_MAX_BYTES: int = Field(default=262144, ge=32768, le=1048576)
     S3_ENDPOINT_URL: str = ""
     S3_BUCKET: str = ""
     S3_ACCESS_KEY_ID: str = ""
@@ -45,16 +50,24 @@ class Settings(BaseSettings):
 
     # Security & Proxies
     TRUSTED_PROXIES: List[str] = ["127.0.0.1", "::1"]
-    PROXY_MODE: Literal["explicit", "railway"] = "explicit"
+    PROXY_MODE: Literal["explicit", "railway", "vercel"] = "explicit"
     ENABLE_EXTERNAL_GEOIP: bool = False
 
     @field_validator("DATABASE_URL", mode="before")
     def assemble_database_url(cls, v: str) -> str:
         if isinstance(v, str):
             if v.startswith("postgres://"):
-                return v.replace("postgres://", "postgresql+asyncpg://", 1)
+                v = v.replace("postgres://", "postgresql+asyncpg://", 1)
             elif v.startswith("postgresql://"):
-                return v.replace("postgresql://", "postgresql+asyncpg://", 1)
+                v = v.replace("postgresql://", "postgresql+asyncpg://", 1)
+            if v.startswith("postgresql+asyncpg://"):
+                from sqlalchemy.engine import make_url
+                url = make_url(v)
+                query = dict(url.query)
+                if "sslmode" in query:
+                    query["ssl"] = query.pop("sslmode")
+                query.pop("channel_binding", None)  # libpq option, not supported by asyncpg.
+                v = url.set(query=query).render_as_string(hide_password=False)
         return v
 
     @field_validator("PUBLIC_APP_URL", mode="after", check_fields=False)
@@ -112,6 +125,20 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production(self):
+        if os.getenv("VERCEL") == "1" and not self.SERVERLESS_MODE:
+            raise ValueError("Vercel requires SERVERLESS_MODE=true.")
+        if self.SERVERLESS_MODE:
+            if self.SINGLE_INSTANCE_MODE or self.RUN_BACKGROUND_TASKS or self.RUN_MIGRATIONS or self.REDIS_URL or self.APP_ROLE != "web":
+                raise ValueError("Serverless requires a web role without Redis, background loops, startup migrations or single-instance mode.")
+            if self.ENVIRONMENT in ("production", "staging"):
+                if not self.DATABASE_URL.startswith("postgresql+asyncpg://") or self.STORAGE_BACKEND != "database":
+                    raise ValueError("Serverless production requires PostgreSQL and database image storage.")
+                if len(self.CRON_SECRET) < 32 or self.EMAIL_PROVIDER != "resend":
+                    raise ValueError("Serverless production requires a random CRON_SECRET (32+ characters) and Resend HTTPS email.")
+                if self.MAX_UPLOAD_SIZE_MB > 3:
+                    raise ValueError("Serverless uploads must be limited to 3MB before multipart overhead.")
+        if self.SINGLE_INSTANCE_MODE and (self.APP_ROLE != "web" or not self.RUN_BACKGROUND_TASKS):
+            raise ValueError("Single-instance mode requires APP_ROLE=web and RUN_BACKGROUND_TASKS=true.")
         if self.STORAGE_BACKEND == "s3" and not all((self.S3_ENDPOINT_URL, self.S3_BUCKET, self.S3_ACCESS_KEY_ID, self.S3_SECRET_ACCESS_KEY)):
             raise ValueError("S3 storage requires endpoint, bucket and credentials.")
         if self.ENVIRONMENT in ("production", "staging"):
@@ -128,11 +155,11 @@ class Settings(BaseSettings):
             if "*" in self.TRUSTED_PROXIES:
                 raise ValueError("TRUSTED_PROXIES must contain explicit addresses or CIDRs.")
             if os.getenv("RAILWAY_PROJECT_ID"):
-                if not self.REDIS_URL or self.STORAGE_BACKEND != "s3" or not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
-                    raise ValueError("Railway production requires PostgreSQL, Redis and S3 storage.")
+                if (not self.REDIS_URL and not self.SINGLE_INSTANCE_MODE) or self.STORAGE_BACKEND != "s3" or not self.DATABASE_URL.startswith("postgresql+asyncpg://"):
+                    raise ValueError("Railway production requires PostgreSQL and S3; Redis is required unless SINGLE_INSTANCE_MODE=true.")
                 if self.RUN_MIGRATIONS:
                     raise ValueError("Railway migrations must run in pre-deploy, not in each replica.")
-                if self.APP_ROLE == "web" and self.RUN_BACKGROUND_TASKS:
+                if self.APP_ROLE == "web" and self.RUN_BACKGROUND_TASKS and not self.SINGLE_INSTANCE_MODE:
                     raise ValueError("Railway web must set RUN_BACKGROUND_TASKS=false and use a worker service.")
         return self
 
@@ -140,4 +167,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+if settings.STORAGE_BACKEND == "local":
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)

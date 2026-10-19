@@ -1,4 +1,6 @@
 "use client";
+import { startVisiblePolling } from "@/lib/visiblePolling";
+import { CHAT_WEBSOCKETS_ENABLED } from "@/lib/api";
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -228,6 +230,7 @@ export default function PublicFinderPage() {
       setConversation(convData);
     } catch (err) {
       console.error("Finder chat load error:", err);
+      if ((err as { status?: number }).status !== 404) return;
       // If session was deleted by owner, reset to fresh contact form
       localStorage.removeItem(`kq_finder_token_${itemCode}`);
       setSessionToken(null);
@@ -241,7 +244,7 @@ export default function PublicFinderPage() {
 
   // WebSocket real-time connection for finder (with 25s heartbeat, error handling & auto-reconnect)
   useEffect(() => {
-    if (!conversation?.id || !sessionToken) return;
+    if (!CHAT_WEBSOCKETS_ENABLED || !conversation?.id || !sessionToken) return;
 
     const wsUrl = getWebSocketChatUrl(conversation.id);
     let ws: WebSocket | null = null;
@@ -349,17 +352,13 @@ export default function PublicFinderPage() {
   useEffect(() => {
     if (!sessionToken || isWsConnected) return;
 
-    const interval = setInterval(() => {
-      loadFinderChat(sessionToken);
-    }, 8000);
-
-    return () => clearInterval(interval);
+    return startVisiblePolling(() => loadFinderChat(sessionToken), 15000, false);
   }, [sessionToken, isWsConnected]);
 
   // Scroll to bottom when messages update
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.messages, ownerIsTyping]);
+  }, [conversation?.id, conversation?.messages.length, ownerIsTyping]);
 
   const handleReplyInputChange = (val: string) => {
     setReplyText(val);

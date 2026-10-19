@@ -42,9 +42,9 @@ async def claim_email():
     return None
 
 
-async def deliver_pending(stop_event=None) -> int:
+async def deliver_pending(stop_event=None, max_messages: int = 20) -> int:
     delivered = 0
-    for _ in range(20):
+    for _ in range(max_messages):
         if stop_event is not None and stop_event.is_set():
             break
         mail = await claim_email()

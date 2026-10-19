@@ -10,6 +10,8 @@ import { useToast } from "@/components/ui/ToastProvider";
 import { useVisualViewport } from "@/lib/useVisualViewport";
 import { chatApi, getAuthToken, getMediaUrl, getWebSocketChatUrl, ConversationData, ConversationDetailData, MessageData, uploadImage } from "@/lib/api";
 import { decodeHtmlEntities, parseMessageMedia } from "@/lib/utils";
+import { startVisiblePolling } from "@/lib/visiblePolling";
+import { CHAT_WEBSOCKETS_ENABLED } from "@/lib/api";
 
 function time(value: string) { return new Date(value).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }); }
 
@@ -78,13 +80,14 @@ function MessagesContent() {
     catch (error) { setListError((error as Error).message); if (!getAuthToken()) router.replace("/login"); }
     finally { setLoading(false); }
   }, [router]);
-  useEffect(() => { loadList(); const timer = setInterval(() => { if (!document.hidden) loadList(); }, 8000); return () => clearInterval(timer); }, [loadList]);
+  useEffect(() => startVisiblePolling(loadList, 30000), [loadList]);
 
   const loadDetails = useCallback(async (id: string, initial = false) => {
     if (initial) setLoadingChat(true);
     try {
       const next = await chatApi.getDetails(id);
       if (activeRef.current !== id) return;
+      const hasNewMessages = next.messages.some(message => !latestChat.current?.messages.some(existing => existing.id === message.id));
       setDetails(previous => {
         if (previous?.id !== next.id) return next;
         const byId = new Map(previous.messages.map(message => [message.id, message]));
@@ -92,7 +95,7 @@ function MessagesContent() {
         return { ...next, messages: Array.from(byId.values()).sort((a, b) => a.created_at.localeCompare(b.created_at)) };
       }); setChatError("");
       setList(previous => previous.map(item => item.id === id ? { ...item, unread_count: 0 } : item));
-      if (initial) scrollBottom(true); else scrollBottom();
+      if (initial) scrollBottom(true); else if (hasNewMessages) scrollBottom();
     } catch (error) { if (activeRef.current === id) setChatError((error as Error).message); }
     finally { if (activeRef.current === id) setLoadingChat(false); }
   }, [scrollBottom]);
@@ -103,7 +106,7 @@ function MessagesContent() {
   }, [activeId, loadDetails]);
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!CHAT_WEBSOCKETS_ENABLED || !activeId) return;
     let disposed = false;
     let ws: WebSocket | null = null;
     let reconnect: ReturnType<typeof setTimeout>;
@@ -152,10 +155,7 @@ function MessagesContent() {
   }, [activeId, loadDetails, loadList, scrollBottom]);
   useEffect(() => {
     if (!activeId) return;
-    const timer = setInterval(() => { if (!connected && !document.hidden) loadDetails(activeId); }, 8000);
-    const focus = () => { if (!document.hidden) loadDetails(activeId); };
-    document.addEventListener("visibilitychange", focus);
-    return () => { clearInterval(timer); document.removeEventListener("visibilitychange", focus); };
+    return startVisiblePolling(async () => { if (!connected) await loadDetails(activeId); }, 15000, false);
   }, [activeId, connected, loadDetails]);
 
   const sendContent = async (content: string, sharedLocation = location) => {
@@ -218,7 +218,7 @@ function MessagesContent() {
           {activeId ? <>
             <header className="shrink-0 flex items-center gap-2 p-3 md:px-5 bg-paper-card border-b border-ink/10">
               <Link href="/messages" className="app-icon-button md:hidden" aria-label="Konuşma listesine dön"><ArrowLeft size={22} /></Link>
-              <div className="min-w-0 flex-1"><h2 className="font-extrabold truncate text-base">{decodeHtmlEntities(details?.item?.name) || "Konuşma"}</h2><p className="text-xs text-ink-soft mt-1">{typing ? "Bulan kişi yazıyor…" : connected ? "Canlı bağlantı · Bilgilerin gizli" : "Bağlantı yenileniyor…"}</p></div>
+              <div className="min-w-0 flex-1"><h2 className="font-extrabold truncate text-base">{decodeHtmlEntities(details?.item?.name) || "Konuşma"}</h2><p className="text-xs text-ink-soft mt-1">{typing ? "Bulan kişi yazıyor…" : !CHAT_WEBSOCKETS_ENABLED ? "Mesajlar düzenli güncellenir · Bilgilerin gizli" : connected ? "Canlı bağlantı · Bilgilerin gizli" : "Bağlantı yenileniyor…"}</p></div>
               <button className="app-icon-button" onClick={() => setActions(true)} aria-label="Konuşma işlemleri"><MoreHorizontal size={23} /></button><div className="md:hidden"><MobileAccountMenu unreadCount={unread} /></div>
             </header>
             {details?.status === "resolved" && <div className="px-5 py-3 bg-[#e5eee4] text-[#28654b] text-sm flex gap-2"><CheckCheck size={18} />Eşya teslim alındı. Teşekkürler!</div>}

@@ -5,6 +5,7 @@ import { Bell, CheckCheck, QrCode, MessageCircle, ArrowUpRight } from "lucide-re
 import { Sheet } from "@/components/ui/Sheet";
 import { notificationsApi, getAuthToken, NotificationData } from "@/lib/api";
 import { decodeHtmlEntities } from "@/lib/utils";
+import { startVisiblePolling } from "@/lib/visiblePolling";
 
 export function NotificationDropdown() {
   const router = useRouter();
@@ -26,7 +27,7 @@ export function NotificationDropdown() {
       setItems(next); setError("");
     } catch { setError("Bildirimler yüklenemedi. Tekrar deneyebilirsin."); }
   };
-  useEffect(() => { load(); const timer = setInterval(load, 8000); return () => clearInterval(timer); }, []);
+  useEffect(() => startVisiblePolling(load, 60000), []);
   const unread = items.filter(item => !item.is_read);
   const read = items.filter(item => item.is_read);
   const select = async (item: NotificationData) => {
