@@ -33,8 +33,10 @@ for (const path of publicPaths) {
   titles.add(title);
   for (const [, json] of html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/gs)) JSON.parse(json);
 }
+assert(pages.get("/").includes('href="/rehber"'), "guide directory linked from homepage footer");
+assert(!pages.get("/").includes('id="guide-links-title"'), "no guide cards on homepage");
 for (const path of publicPaths.filter(path => path.startsWith("/rehber/"))) {
-  assert(pages.get("/").includes(`href="${path}"`), `${path}: linked from home`);
+  assert(pages.get("/rehber").includes(`href="${path}"`), `${path}: linked from guide directory`);
   assert.match(pages.get(path), /"@type":"Article"/, `${path}: article schema`);
   assert.match(pages.get(path), /"@type":"BreadcrumbList"/, `${path}: breadcrumb schema`);
   assert.match(pages.get(path), /"url":"[^\"]+\/opengraph-image"|"image":"[^\"]+\/opengraph-image"/, `${path}: structured image`);
