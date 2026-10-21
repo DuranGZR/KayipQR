@@ -71,7 +71,7 @@ def decode_access_token(token: str) -> Optional[dict]:
 
 
 def token_matches_user(payload: dict, user: Any) -> bool:
-    return bool(user and user.is_active and payload.get("sub") == user.id
+    return bool(user and user.is_active and getattr(user, "email_verified", True) and payload.get("sub") == user.id
                 and hmac.compare_digest(str(payload.get("fgp", "")), _password_fingerprint(user.hashed_password)))
 
 
@@ -96,6 +96,20 @@ def decode_password_reset_token(token: str, current_hashed_password: Optional[st
                 return None
         return payload.get("sub")
     except Exception:
+        return None
+
+
+def create_email_verification_token(user) -> str:
+    return jwt.encode({"sub": user.email, "type": "verify_email", "fgp": _password_fingerprint(user.hashed_password),
+        "exp": datetime.now(timezone.utc) + timedelta(hours=24)}, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_email_verification_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM],
+            options={"require": ["exp", "sub", "type", "fgp"]})
+        return payload if payload["type"] == "verify_email" else None
+    except jwt.PyJWTError:
         return None
 
 

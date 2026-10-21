@@ -1,4 +1,5 @@
 from typing import Optional
+from datetime import datetime, timezone
 from sqlalchemy import select, update, delete
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -6,7 +7,7 @@ from fastapi import HTTPException, status
 from app.core.config import settings
 from app.core.security import create_access_token, password_needs_rehash, hash_password, check_password
 from app.models.user import User
-from app.schemas.user import UserCreate, UserUpdate, UserPasswordChange, Token, UserResponse
+from app.schemas.user import UserCreate, UserUpdate, UserPasswordChange, Token, UserResponse, RegistrationResponse
 
 
 class AuthService:
@@ -21,7 +22,8 @@ class AuthService:
         return result.scalars().first()
 
     @staticmethod
-    async def register(db: AsyncSession, user_in: UserCreate) -> Token:
+    async def register(db: AsyncSession, user_in: UserCreate) -> RegistrationResponse:
+        await AuthService.email_cooldown("verify_email", user_in.email)
         existing_user = await AuthService.get_by_email(db, user_in.email)
         if existing_user:
             raise HTTPException(
@@ -35,9 +37,14 @@ class AuthService:
             hashed_password=hashed_password,
             full_name=user_in.full_name,
             phone_number=user_in.phone_number,
+            email_verified=False,
+            email_on_scan=False,
         )
         db.add(db_user)
         try:
+            await db.flush()
+            from app.services.outbox_service import queue_auth_email
+            await queue_auth_email(db, db_user, "verify_email")
             await db.commit()
         except IntegrityError:
             await db.rollback()
@@ -47,12 +54,8 @@ class AuthService:
             )
         await db.refresh(db_user)
 
-        token = create_access_token(subject=db_user.id, password_hash=db_user.hashed_password)
-        return Token(
-            access_token=token,
-            token_type="bearer",
-            user=UserResponse.model_validate(db_user),
-        )
+        return RegistrationResponse(email=db_user.email,
+            message="Hesabını etkinleştirmek için e-postana gönderilen doğrulama bağlantısını aç.")
 
     @staticmethod
     async def authenticate(db: AsyncSession, email: str, password: str) -> Token:
@@ -69,6 +72,8 @@ class AuthService:
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Bu hesap devre dışı bırakılmıştır.",
             )
+        if not user.email_verified:
+            raise HTTPException(status_code=403, detail="Önce e-posta adresini doğrula. Doğrulama sayfasından yeni bağlantı isteyebilirsin.")
 
         verified_hash = user.hashed_password
         if password_needs_rehash(verified_hash):
@@ -107,7 +112,7 @@ class AuthService:
                 old_avatar_url = user.avatar_url
             user.avatar_url = avatar_url
         if user_in.email_on_scan is not None:
-            user.email_on_scan = user_in.email_on_scan
+            user.email_on_scan = False
         if user_in.email_on_message is not None:
             user.email_on_message = user_in.email_on_message
 
@@ -173,25 +178,52 @@ class AuthService:
 
     @staticmethod
     async def forgot_password(db: AsyncSession, email: str) -> dict:
+        await AuthService.email_cooldown("password_reset", email)
         user = await AuthService.get_by_email(db, email)
-        if user:
-            from app.core.security import create_password_reset_token
-            from app.services.email_service import email_service
-            reset_token = create_password_reset_token(user.email, user.hashed_password)
-            reset_link = f"{settings.PUBLIC_APP_URL}/reset-password?token={reset_token}"
-
-            html_body = email_service.render_password_reset_email(
-                reset_url=reset_link,
-                user_name=user.full_name,
-            )
-            from app.services.outbox_service import queue_email
-            queue_email(db, user.email, "KayıpQR — Şifre Sıfırlama Talebi", html_body)
+        if user and user.is_active:
+            from app.services.outbox_service import queue_auth_email
+            await queue_auth_email(db, user, "password_reset")
             await db.commit()
 
         # Consistent generic message to prevent user enumeration
         return {
-            "message": "Eğer bu e-posta adresi sistemimizde kayıtlıysa, şifre sıfırlama bağlantısı e-posta adresinize gönderilmiştir."
+            "message": "Eğer bu e-posta adresi sistemimizde kayıtlıysa, şifre sıfırlama e-postası gönderim için hazırlanmıştır.",
+            "retry_after": 60,
         }
+
+    @staticmethod
+    async def email_cooldown(purpose: str, email: str):
+        from app.services.runtime_limits import consume_window
+        retry = await consume_window(f"auth-email:{purpose}:{email.lower()}", 1, 60)
+        if retry:
+            raise HTTPException(status_code=429, detail=f"Yeni e-posta için {retry} saniye bekle.", headers={"Retry-After": str(retry)})
+
+    @staticmethod
+    async def resend_verification(db: AsyncSession, email: str) -> dict:
+        await AuthService.email_cooldown("verify_email", email)
+        user = await AuthService.get_by_email(db, email)
+        if user and user.is_active and not user.email_verified:
+            from app.services.outbox_service import queue_auth_email
+            await queue_auth_email(db, user, "verify_email")
+            await db.commit()
+        return {"message": "Doğrulanmamış bir hesabın varsa doğrulama e-postası gönderim için hazırlanmıştır.", "retry_after": 60}
+
+    @staticmethod
+    async def verify_email(db: AsyncSession, token: str) -> Token:
+        from app.core.security import decode_email_verification_token, _password_fingerprint
+        import hmac
+        payload = decode_email_verification_token(token)
+        user = await AuthService.get_by_email(db, payload["sub"]) if payload else None
+        if (not user or not user.is_active or user.email_verified
+            or not hmac.compare_digest(payload["fgp"], _password_fingerprint(user.hashed_password))):
+            raise HTTPException(status_code=400, detail="Doğrulama bağlantısı geçersiz, kullanılmış veya süresi dolmuş.")
+        changed = await db.execute(update(User).where(User.id == user.id, User.email_verified.is_(False),
+            User.hashed_password == user.hashed_password).values(email_verified=True, email_verified_at=datetime.now(timezone.utc)).execution_options(synchronize_session=False))
+        if changed.rowcount != 1:
+            raise HTTPException(status_code=400, detail="Doğrulama bağlantısı daha önce kullanılmış.")
+        await db.commit()
+        await db.refresh(user)
+        return Token(access_token=create_access_token(user.id, user.hashed_password), user=UserResponse.model_validate(user))
 
     @staticmethod
     async def reset_password(db: AsyncSession, token: str, new_password: str) -> dict:
@@ -220,7 +252,7 @@ class AuthService:
         new_hash = await hash_password(new_password)
         changed = await db.execute(update(User).where(
             User.id == user.id, User.hashed_password == user.hashed_password
-        ).values(hashed_password=new_hash).execution_options(synchronize_session=False))
+        ).values(hashed_password=new_hash, email_verified=True, email_verified_at=datetime.now(timezone.utc)).execution_options(synchronize_session=False))
         if changed.rowcount != 1:
             await db.rollback()
             raise HTTPException(status_code=400, detail="Bu şifre sıfırlama bağlantısı daha önce kullanılmış veya geçersiz.")

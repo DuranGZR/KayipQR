@@ -174,6 +174,7 @@ export default function PublicFinderPage() {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationDetailData | null>(null);
   const latestChat = useRef(conversation);
+  const latestSession = useRef<string | null>(null);
   useEffect(() => { latestChat.current = conversation; }, [conversation]);
   const [replyText, setReplyText] = useState("");
   const [isSendingReply, setIsSendingReply] = useState(false);
@@ -226,8 +227,16 @@ export default function PublicFinderPage() {
   // 2. Load finder chat messages
   const loadFinderChat = async (token: string) => {
     try {
-      const convData = await publicApi.getFinderConversation(token);
-      setConversation(convData);
+      const previous = latestSession.current === token ? latestChat.current : null;
+      latestSession.current = token;
+      const convData = await publicApi.getFinderConversation(token, previous);
+      if (latestSession.current !== token) return;
+      setConversation(previous => {
+        if (previous?.id !== convData.id) return convData;
+        const messages = new Map(previous.messages.map(message => [message.id, message]));
+        convData.messages.forEach(message => messages.set(message.id, message));
+        return { ...convData, messages: Array.from(messages.values()).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)) };
+      });
     } catch (err) {
       console.error("Finder chat load error:", err);
       if ((err as { status?: number }).status !== 404) return;
@@ -711,8 +720,7 @@ export default function PublicFinderPage() {
                   const isFinder = msg.sender_type === "finder";
                   const decodedContent = decodeHtmlEntities(msg.content);
                   const photoUrl = extractPhotoUrl(decodedContent);
-                  const cleanText = decodedContent
-                    .replace(/📷\s*\[(?:Fotoğraf(?:\s*\/\s*Photo)?|Photo)\]\([^)]+\)/gi, "")
+                  const cleanText = parseMessageMedia(decodedContent).text
                     .replace(
                       "📍 Location shared",
                       lang === "en" ? "📍 Location shared" : "📍 Konum paylaşıldı"

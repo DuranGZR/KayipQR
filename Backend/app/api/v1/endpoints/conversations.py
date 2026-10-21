@@ -1,6 +1,8 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func
+from app.models.message import Message
 from app.api.deps import get_current_user
 from app.core.rate_limiter import rate_limiter
 from app.db.session import get_db
@@ -41,6 +43,7 @@ async def get_conversation_details(
     conversation_id: str,
     limit: int = Query(100, ge=1, le=200),
     before: Optional[str] = Query(None, max_length=36),
+    after: Optional[str] = Query(None, max_length=36),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -52,7 +55,7 @@ async def get_conversation_details(
             detail="Konuşma bulunamadı.",
         )
 
-    messages, next_cursor = await chat_service.get_message_page(db, conv.id, limit, before)
+    messages, next_cursor = await chat_service.get_message_page(db, conv.id, limit, before, after)
     await chat_service.mark_conversation_as_read(
         db=db, conversation_id=conv.id, sender_type_to_mark="finder"
     )
@@ -60,7 +63,7 @@ async def get_conversation_details(
         if m.sender_type == "finder":
             m.is_read = True
 
-    latest_messages, _ = await chat_service.get_message_page(db, conv.id, 1) if before else (messages, None)
+    latest_messages, _ = await chat_service.get_message_page(db, conv.id, 1) if before or after else (messages, None)
     last_msg = latest_messages[-1] if latest_messages else None
     last_msg_resp = MessageResponse.model_validate(last_msg) if last_msg else None
 
@@ -87,6 +90,8 @@ async def get_conversation_details(
         unread_count=sum(1 for m in messages if m.sender_type == "finder" and not m.is_read),
         messages=[MessageResponse.model_validate(m) for m in messages],
         next_cursor=next_cursor,
+        read_through=await db.scalar(select(func.max(Message.created_at)).where(Message.conversation_id == conv.id,
+            Message.sender_type == "owner", Message.is_read.is_(True))),
     )
 
 
@@ -184,6 +189,7 @@ async def get_finder_conversation(
     request: Request,
     limit: int = Query(100, ge=1, le=200),
     before: Optional[str] = Query(None, max_length=36),
+    after: Optional[str] = Query(None, max_length=36),
     db: AsyncSession = Depends(get_db),
 ):
     """Bulan kişinin anonim token'ı ile mesajlaşma geçmişini getirir."""
@@ -195,7 +201,7 @@ async def get_finder_conversation(
             detail="Konuşma oturumu bulunamadı.",
         )
 
-    messages, next_cursor = await chat_service.get_message_page(db, conv.id, limit, before)
+    messages, next_cursor = await chat_service.get_message_page(db, conv.id, limit, before, after)
 
     # Mark owner's unread messages as read by finder
     await chat_service.mark_conversation_as_read(
@@ -205,7 +211,7 @@ async def get_finder_conversation(
         if m.sender_type == "owner":
             m.is_read = True
 
-    latest_messages, _ = await chat_service.get_message_page(db, conv.id, 1) if before else (messages, None)
+    latest_messages, _ = await chat_service.get_message_page(db, conv.id, 1) if before or after else (messages, None)
     last_msg = latest_messages[-1] if latest_messages else None
     last_msg_resp = MessageResponse.model_validate(last_msg) if last_msg else None
 
@@ -234,6 +240,8 @@ async def get_finder_conversation(
         unread_count=0,
         messages=[MessageResponse.model_validate(m) for m in messages],
         next_cursor=next_cursor,
+        read_through=await db.scalar(select(func.max(Message.created_at)).where(Message.conversation_id == conv.id,
+            Message.sender_type == "finder", Message.is_read.is_(True))),
     )
 
 

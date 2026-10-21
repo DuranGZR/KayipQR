@@ -100,6 +100,7 @@ jobs:
       - run: npm ci
       - run: node tests/api-pagination.cjs
       - run: node tests/visible-polling.cjs
+      - run: node tests/message-media.cjs
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npm run build
       - name: Frontend container startup and Railway PORT

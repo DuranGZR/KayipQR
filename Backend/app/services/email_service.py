@@ -313,7 +313,7 @@ class EmailService:
           <a href="{safe_url}" class="btn" target="_blank">Mesaja Cevap Ver →</a>
         </div>
         <p style="font-size: 12px; color: #6B665E; margin-top: 16px;">
-          🔒 İletişiminiz KayıpQR üzerinden 100% anonim ve güvenli olarak gerçekleşmektedir.
+          Hesap e-postanız ve telefonunuz bulan kişiye otomatik gösterilmez. Mesajlarınızda kendiniz paylaştığınız bilgiler karşı tarafa görünür.
         </p>
         """
         return self._get_base_template("Yeni Mesajınız Var", f"'{item_name}' için yeni bir mesajınız var.", content)

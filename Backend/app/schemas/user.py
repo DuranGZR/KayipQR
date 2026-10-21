@@ -9,7 +9,7 @@ class UserBase(BaseModel):
     full_name: Optional[str] = Field(default=None, max_length=255)
     phone_number: Optional[str] = Field(default=None, max_length=50)
     avatar_url: Optional[str] = Field(default=None, max_length=500)
-    email_on_scan: bool = True
+    email_on_scan: bool = False
     email_on_message: bool = True
 
 
@@ -59,6 +59,8 @@ class UserResponse(UserBase):
     id: str
     is_active: bool
     is_superuser: bool
+    email_verified: bool
+    has_password: bool = True
     created_at: datetime
     updated_at: datetime
 
@@ -75,3 +77,13 @@ class Token(BaseModel):
 class TokenPayload(BaseModel):
     sub: Optional[str] = None
     exp: Optional[int] = None
+
+
+class RegistrationResponse(BaseModel):
+    message: str
+    email: EmailStr
+    verification_required: bool = True
+
+
+class EmailTokenRequest(BaseModel):
+    token: str = Field(..., min_length=1, max_length=4096)

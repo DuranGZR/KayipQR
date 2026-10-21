@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -24,21 +24,27 @@ import {
   shakeAnimation,
 } from "@/lib/animations";
 import { authApi } from "@/lib/api";
+import { AccountSketchStyles } from "@/components/dashboard/AccountSketchStyles";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [remaining, setRemaining] = useState(0);
+  useEffect(() => { if (!remaining) return; const timer = setTimeout(() => setRemaining(value => Math.max(0, value - 1)), 1000); return () => clearTimeout(timer); }, [remaining]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault();
+    if (remaining || isLoading) return;
     setIsLoading(true);
     setErrorMsg("");
     try {
-      await authApi.forgotPassword(email.trim());
+      const result = await authApi.forgotPassword(email.trim());
+      setRemaining(result.retry_after);
       setIsSubmitted(true);
     } catch (err: any) {
+      setRemaining(err.retryAfter || 0);
       setErrorMsg(err.message || "İstek gönderilirken bir hata oluştu.");
     } finally {
       setIsLoading(false);
@@ -47,6 +53,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <main className="min-h-screen dot-grid-pattern text-ink flex flex-col justify-between p-6 sm:p-8 selection:bg-gold selection:text-ink">
+      <AccountSketchStyles />
       {/* Top Header Logo */}
       <motion.header
         initial={{ y: -20, opacity: 0 }}
@@ -153,7 +160,7 @@ export default function ForgotPasswordPage() {
                 <motion.div variants={fadeInUp} className="pt-2">
                   <motion.button
                     type="submit"
-                    disabled={isLoading}
+                    disabled={isLoading || remaining > 0}
                     whileHover={{ scale: 1.02, y: -1 }}
                     whileTap={{ scale: 0.98 }}
                     className="relative w-full py-3.5 px-6 text-ink font-bold text-sm active:translate-y-[1.5px] transition-all flex items-center justify-center gap-2 disabled:opacity-75 cursor-pointer"
@@ -184,15 +191,16 @@ export default function ForgotPasswordPage() {
                 <div className="w-12 h-12 mx-auto rounded-full bg-emerald-100 border border-emerald-300 flex items-center justify-center text-emerald-800">
                   <CheckCircle2 className="w-6 h-6" />
                 </div>
-                <h3 className="font-bold text-base text-ink">E-posta Gönderildi!</h3>
+                <h3 className="font-bold text-base text-ink">İsteğin Alındı</h3>
                 <p className="text-xs text-ink-soft leading-relaxed">
-                  Eğer <strong>{email}</strong> adresi sistemimizde kayıtlıysa, şifre sıfırlama bağlantısını e-postanıza ilettik.
+                  Eğer <strong>{email}</strong> adresi sistemimizde kayıtlıysa, şifre sıfırlama e-postasını gönderim için hazırladık.
                 </p>
                 <p className="text-[11.5px] text-ink-soft bg-paper-hover p-3 rounded-lg border border-ink/10">
-                  💡 Lütfen gelen kutunuzu ve spam (gereksiz) klasörünüzü kontrol edin. Bağlantı 30 dakika boyunca geçerlidir.
+                  Gelen kutunu ve spam klasörünü kontrol et. Bağlantı gönderimden itibaren 30 dakika geçerlidir. E-posta gelmezse aşağıdan yeniden isteyebilirsin.
                 </p>
 
                 <div className="pt-2">
+                  <button type="button" className="app-button w-full mb-4" disabled={isLoading || remaining > 0} onClick={handleSubmit}>{remaining ? `${remaining} saniye sonra yeniden gönder` : "E-postayı yeniden gönder"}</button>
                   <Link
                     href="/login"
                     className="relative inline-flex items-center justify-center py-2.5 px-5 rounded-[8px] bg-gold hover:bg-gold-dark text-ink font-bold text-xs shadow-xs"
@@ -205,6 +213,7 @@ export default function ForgotPasswordPage() {
             )}
 
             <motion.div variants={fadeInUp} className="mt-6 pt-5 border-t border-ink/10 text-center text-xs text-ink-soft relative z-10">
+              {!isSubmitted && remaining > 0 && <p role="status" className="mb-3">Yeni e-posta için {remaining} saniye bekle.</p>}
               <Link
                 href="/login"
                 className="font-bold text-ink underline decoration-gold decoration-2 hover:text-gold-dark transition-colors"

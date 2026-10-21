@@ -44,17 +44,17 @@ export const Footer = () => {
             </h4>
             <ul className="mt-3 space-y-2 text-ink-soft">
               <li>
-                <a href="#nasil-calisir" className="hover:text-ink hover:underline">
+                <a href="/#nasil-calisir" className="hover:text-ink hover:underline">
                   Nasıl Çalışır?
                 </a>
               </li>
               <li>
-                <a href="#ozellikler" className="hover:text-ink hover:underline">
+                <a href="/#ozellikler" className="hover:text-ink hover:underline">
                   Özellikler
                 </a>
               </li>
               <li>
-                <a href="#nerede-kullanilir" className="hover:text-ink hover:underline">
+                <a href="/#nerede-kullanilir" className="hover:text-ink hover:underline">
                   Kullanım Alanları
                 </a>
               </li>
@@ -110,7 +110,7 @@ export const Footer = () => {
                 </Link>
               </li>
               <li>
-                <a href="#sss" className="hover:text-ink hover:underline">
+                <a href="/#sss" className="hover:text-ink hover:underline">
                   Sıkça Sorulanlar
                 </a>
               </li>

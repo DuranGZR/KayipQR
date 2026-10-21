@@ -7,7 +7,7 @@ class RedactCredentials(logging.Filter):
     def redact(message):
         if not isinstance(message, str):
             return message
-        message = re.sub(r"([?&](?:token|finder_token)=)[^\s&\"]+", r"\1[REDACTED]", message)
+        message = re.sub(r"([?&](?:token|finder_token|code|state|ticket)=)[^\s&\"]+", r"\1[REDACTED]", message)
         message = re.sub(r"(/conversations/finder/)[^/\s?\"]+", r"\1[REDACTED]", message)
         return message
 

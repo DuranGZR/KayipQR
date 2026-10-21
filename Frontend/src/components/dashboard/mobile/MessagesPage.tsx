@@ -85,7 +85,7 @@ function MessagesContent() {
   const loadDetails = useCallback(async (id: string, initial = false) => {
     if (initial) setLoadingChat(true);
     try {
-      const next = await chatApi.getDetails(id);
+      const next = await chatApi.getDetails(id, initial ? null : latestChat.current);
       if (activeRef.current !== id) return;
       const hasNewMessages = next.messages.some(message => !latestChat.current?.messages.some(existing => existing.id === message.id));
       setDetails(previous => {

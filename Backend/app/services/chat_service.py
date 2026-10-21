@@ -124,20 +124,27 @@ class ChatService:
         return result.scalars().first()
 
     @staticmethod
-    async def get_message_page(db: AsyncSession, conversation_id: str, limit: int = 100, before: Optional[str] = None):
+    async def get_message_page(db: AsyncSession, conversation_id: str, limit: int = 100, before: Optional[str] = None, after: Optional[str] = None):
+        if before and after:
+            raise HTTPException(status_code=400, detail="before ve after birlikte kullanılamaz.")
         query = select(Message).where(Message.conversation_id == conversation_id)
-        if before:
+        if before or after:
             cursor = (await db.execute(select(Message.created_at, Message.id).where(
-                Message.id == before, Message.conversation_id == conversation_id))).first()
+                Message.id == (before or after), Message.conversation_id == conversation_id))).first()
             if cursor is None:
                 raise HTTPException(status_code=404, detail="Mesaj sayfası bulunamadı.")
-            query = query.where(or_(Message.created_at < cursor.created_at,
-                and_(Message.created_at == cursor.created_at, Message.id < cursor.id)))
-        messages = list((await db.execute(query.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit + 1))).scalars())
+            if after:
+                query = query.where(or_(Message.created_at > cursor.created_at,
+                    and_(Message.created_at == cursor.created_at, Message.id > cursor.id)))
+            else:
+                query = query.where(or_(Message.created_at < cursor.created_at,
+                    and_(Message.created_at == cursor.created_at, Message.id < cursor.id)))
+        order = (Message.created_at.asc(), Message.id.asc()) if after else (Message.created_at.desc(), Message.id.desc())
+        messages = list((await db.execute(query.order_by(*order).limit(limit + 1))).scalars())
         has_more = len(messages) > limit
         messages = messages[:limit]
         next_cursor = messages[-1].id if has_more else None
-        return list(reversed(messages)), next_cursor
+        return messages if after else list(reversed(messages)), next_cursor
 
     @staticmethod
     async def get_conversations_for_owner(
@@ -268,7 +275,7 @@ class ChatService:
             owner_res = await db.execute(select(User).where(User.id == conversation.item.user_id))
             owner = owner_res.scalars().first()
             owner_email = owner.email if owner else None
-            send_email = owner.email_on_message if owner else True
+            send_email = False  # Only a conversation's first message sends email.
 
             await notification_service.create_notification(
                 db=db,

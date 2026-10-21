@@ -41,6 +41,18 @@ async function run() {
 
   const loop = client(async () => ({ ok: true, status: 200, json: async () => ({ messages: [], next_cursor: "same" }) }));
   await assert.rejects(() => loop.publicApi.getFinderConversation("token"), /sayfalaması/);
+  const deltaCalls = [];
+  const delta = client(async raw => {
+    const url = new URL(raw); deltaCalls.push(url);
+    assert.equal(url.searchParams.has("before"), false);
+    return {ok:true, status:200, json:async () => ({id:"conversation", status:"active", messages: [{id:"new", content:"Yeni", created_at:"2026-10-21T10:01:00Z", sender_type:"finder"}], next_cursor:null, read_through:"2026-10-21T10:00:00Z"})};
+  });
+  const previous = {id:"conversation", messages:[{id:"old", content:"Eski", sender_type:"owner", created_at:"2026-10-21T10:00:00Z", is_read:false}]};
+  const updated = await delta.chatApi.getDetails("conversation", previous);
+  assert.equal(deltaCalls.length, 1);
+  assert.equal(deltaCalls[0].searchParams.get("after"), "old");
+  assert.equal(updated.messages.map(message=>message.id).join(","), "old,new");
+  assert.equal(updated.messages[0].is_read, true);
   console.log("API pagination: item batches, chronological history and cursor-loop protection passed.");
 }
 

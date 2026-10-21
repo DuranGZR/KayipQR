@@ -1,4 +1,5 @@
 "use client";
+import { GoogleSignIn } from "@/components/auth/GoogleSignIn";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -29,7 +30,7 @@ import {
   fadeInScale,
   shakeAnimation,
 } from "@/lib/animations";
-import { authApi, setAuthSession } from "@/lib/api";
+import { authApi } from "@/lib/api";
 import { haptic } from "@/lib/haptics";
 
 export default function RegisterPage() {
@@ -88,12 +89,7 @@ export default function RegisterPage() {
         full_name: fullName,
       });
 
-      // Save token and user info
-      setAuthSession(response.access_token, response.user, true);
-
-      const params = new URLSearchParams(window.location.search);
-      const redirect = params.get("redirect");
-      router.push(redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/dashboard");
+      router.push(`/verify-email?email=${encodeURIComponent(response.email)}`);
     } catch (err: any) {
       setErrorMessage(err.message || "Kayıt sırasında bir hata oluştu. Lütfen tekrar deneyin.");
     } finally {
@@ -293,6 +289,7 @@ export default function RegisterPage() {
               </motion.div>
 
               {/* Submit Button */}
+              <GoogleSignIn redirect={redirectParam || "/dashboard"} disabled={!agreeTerms || isLoading} />
               <motion.div variants={fadeInUp} className="pt-2">
                 <motion.button
                   type="submit"
@@ -310,7 +307,7 @@ export default function RegisterPage() {
                       </>
                     ) : (
                       <>
-                        <span>Kayıt Ol & QR Tasarla</span>
+                        <span>Kayıt Ol & E-postanı Doğrula</span>
                         <ArrowRight className="w-4 h-4" />
                       </>
                     )}

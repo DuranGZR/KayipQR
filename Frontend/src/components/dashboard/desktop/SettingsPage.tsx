@@ -47,7 +47,6 @@ export default function SettingsPage() {
   // Profile Form States
   const [fullName, setFullName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [emailOnScan, setEmailOnScan] = useState(true);
   const [emailOnMessage, setEmailOnMessage] = useState(true);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
@@ -135,7 +134,6 @@ export default function SettingsPage() {
       setCurrentUser(user);
       setFullName(user.full_name || "");
       setPhoneNumber(user.phone_number || "");
-      setEmailOnScan(user.email_on_scan ?? true);
       setEmailOnMessage(user.email_on_message ?? true);
     } catch (err: any) {
       console.error("Failed to load user settings:", err);
@@ -160,7 +158,6 @@ export default function SettingsPage() {
       const updated = await authApi.updateProfile({
         full_name: fullName.trim(),
         phone_number: phoneNumber.trim(),
-        email_on_scan: emailOnScan,
         email_on_message: emailOnMessage,
       });
 
@@ -364,21 +361,7 @@ export default function SettingsPage() {
                         </h4>
                       </div>
 
-                      <div className="flex items-start gap-3 p-3 rounded-xl bg-white border border-ink/20 shadow-xs">
-                        <input
-                          type="checkbox"
-                          id="emailOnScan"
-                          checked={emailOnScan}
-                          onChange={(e) => setEmailOnScan(e.target.checked)}
-                          className="w-4 h-4 mt-0.5 rounded border-ink text-gold focus:ring-gold accent-gold cursor-pointer"
-                        />
-                        <label htmlFor="emailOnScan" className="text-xs leading-relaxed cursor-pointer">
-                          <strong className="block text-ink font-bold">QR Kod Okutulma Bildirimi</strong>
-                          <span className="text-ink-soft text-[11px]">
-                            Eşyanızın üzerindeki QR kamera ile tarandığı anda e-posta ile bildirim alın.
-                          </span>
-                        </label>
-                      </div>
+
 
                       <div className="flex items-start gap-3 p-3 rounded-xl bg-white border border-ink/20 shadow-xs">
                         <input
@@ -389,9 +372,9 @@ export default function SettingsPage() {
                           className="w-4 h-4 mt-0.5 rounded border-ink text-gold focus:ring-gold accent-gold cursor-pointer"
                         />
                         <label htmlFor="emailOnMessage" className="text-xs leading-relaxed cursor-pointer">
-                          <strong className="block text-ink font-bold">Yeni Mesaj Bildirimi</strong>
+                          <strong className="block text-ink font-bold">Yeni Konuşmanın İlk Mesajı</strong>
                           <span className="text-ink-soft text-[11px]">
-                            Eşyanızı bulan kişi mesaj veya konum gönderdiğinde anında e-posta alın.
+                            Her yeni konuşmada yalnızca ilk mesaj için e-posta alın. QR taramalarında ve sonraki mesajlarda e-posta gönderilmez.
                           </span>
                         </label>
                       </div>
@@ -458,7 +441,8 @@ export default function SettingsPage() {
                     )}
                   </AnimatePresence>
 
-                  <form onSubmit={handleChangePassword} className="space-y-3.5">
+                  {currentUser?.has_password === false && <p className="text-sm leading-relaxed mb-4">Google ile giriş yapıyorsun. E-posta ile giriş için <a className="underline" href="/forgot-password">şifre belirleme bağlantısı isteyebilirsin</a>.</p>}
+                  <form hidden={currentUser?.has_password === false} onSubmit={handleChangePassword} className="space-y-3.5">
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1 flex items-center gap-1.5">
                         <Lock className="w-3.5 h-3.5" /> Mevcut Şifre

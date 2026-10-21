@@ -78,7 +78,7 @@ export default function TermsOfServicePage() {
                     Kullanım Koşulları
                   </h1>
                   <p className="text-xs text-ink-soft mt-1">
-                    Son Güncelleme: 18 Ekim 2026
+                    Son Güncelleme: 21 Ekim 2026
                   </p>
                 </div>
 
@@ -97,7 +97,7 @@ export default function TermsOfServicePage() {
                       1. Hesap Oluşturma ve Güvenlik
                     </h2>
                     <p>
-                      Kullanıcı, hesap oluştururken doğru ve güncel bilgiler sağlamakla yükümlüdür. Hesap şifresinin gizliliği ve hesap üzerinden yapılan tüm işlemler kullanıcının kendi sorumluluğundadır.
+                      Kullanıcı, hesap oluştururken doğru ve güncel bilgiler sağlamakla yükümlüdür. Yeni e-posta kayıtları adres doğrulaması gerektirir. Google ile giriş de kullanılabilir. Şifre sıfırlama bağlantıları gönderimden itibaren 30 dakika, e-posta doğrulama bağlantıları 24 saat geçerlidir. Hesap şifresinin gizliliği ve hesap üzerinden yapılan tüm işlemler kullanıcının kendi sorumluluğundadır.
                     </p>
                   </section>
 

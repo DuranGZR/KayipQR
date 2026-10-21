@@ -1,3 +1,4 @@
+from tests.helpers import verified_registration, verified_registration_sync
 import io
 import logging
 import time
@@ -33,7 +34,7 @@ from app.services.outbox_service import deliver_pending
 
 async def account(ac):
     email = f"prod-{uuid.uuid4().hex}@example.com"
-    res = await ac.post("/api/v1/auth/register", json={"email": email, "password": "initial-password"})
+    res = await verified_registration(ac, {"email": email, "password": "initial-password"})
     assert res.status_code == 201, res.text
     data = res.json()
     return data, {"Authorization": f"Bearer {data['access_token']}"}
@@ -344,7 +345,7 @@ def test_access_logs_redact_credentials():
 def test_websocket_rejects_expired_and_inactive_owner():
     with TestClient(app) as client:
         email = f"socket-{uuid.uuid4().hex}@example.com"
-        data = client.post("/api/v1/auth/register", json={"email": email, "password": "initial-password"}).json()
+        data = verified_registration_sync(client, {"email": email, "password": "initial-password"}).json()
         headers = {"Authorization": f"Bearer {data['access_token']}"}
         item = client.post("/api/v1/items", headers=headers, json={"name": "Socket"}).json()
         contact = client.post(f"/api/v1/public/q/{item['qr_code']['unique_code']}/contact", json={"message": "Buldum"}).json()

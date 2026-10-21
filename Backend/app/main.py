@@ -87,7 +87,13 @@ async def serverless_email_delivery(request: Request, call_next):
         async def dispatch():
             from app.services.outbox_service import deliver_pending
             try:
-                await asyncio.wait_for(deliver_pending(max_messages=3), timeout=15)
+                async def deliver_with_retries():
+                    await deliver_pending(max_messages=3)
+                    if request.url.path.startswith(settings.API_V1_STR + "/auth/"):
+                        for _ in range(2):
+                            await asyncio.sleep(2)
+                            await deliver_pending(max_messages=1)
+                await asyncio.wait_for(deliver_with_retries(), timeout=15)
             except Exception:
                 logging.getLogger(__name__).warning("Email delivery deferred to a later request or daily cron")
         background = BackgroundTasks()
@@ -105,7 +111,7 @@ async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     response.headers["X-XSS-Protection"] = "1; mode=block"
     if is_production:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
@@ -224,7 +230,7 @@ async def websocket_chat_endpoint(
 
     async def authorized():
         async with AsyncSessionLocal() as db:
-            row = (await db.execute(select(Conversation.finder_session_token, User.id, User.hashed_password, User.is_active)
+            row = (await db.execute(select(Conversation.finder_session_token, User.id, User.hashed_password, User.is_active, User.email_verified)
                 .join(Item, Item.id == Conversation.item_id)
                 .join(User, User.id == Item.user_id)
                 .where(Conversation.id == conversation_id))).first()

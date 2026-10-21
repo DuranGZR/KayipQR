@@ -13,6 +13,8 @@ from app.schemas.user import (
     UserResetPassword,
     UserResponse,
     Token,
+    RegistrationResponse,
+    EmailTokenRequest,
 )
 from app.services.auth_service import auth_service
 from app.core.security import create_access_token
@@ -20,11 +22,23 @@ from app.core.security import create_access_token
 router = APIRouter()
 
 
-@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=RegistrationResponse, status_code=status.HTTP_201_CREATED)
 async def register(request: Request, user_in: UserCreate, db: AsyncSession = Depends(get_db)):
-    """Yeni kullanıcı hesabı oluşturur ve JWT token döner."""
+    """Doğrulanmamış hesap oluşturur; e-posta doğrulanmadan oturum açılmaz."""
     await rate_limiter.check_rate_limit(request, max_requests=10, window_seconds=60, key_prefix="auth_register")
     return await auth_service.register(db, user_in)
+
+
+@router.post("/verify-email", response_model=Token)
+async def verify_email(request: Request, body: EmailTokenRequest, db: AsyncSession = Depends(get_db)):
+    await rate_limiter.check_rate_limit(request, max_requests=10, window_seconds=60, key_prefix="verify_email")
+    return await auth_service.verify_email(db, body.token)
+
+
+@router.post("/resend-verification")
+async def resend_verification(request: Request, body: UserForgotPassword, db: AsyncSession = Depends(get_db)):
+    await rate_limiter.check_rate_limit(request, max_requests=5, window_seconds=60, key_prefix="resend_verify")
+    return await auth_service.resend_verification(db, body.email)
 
 
 @router.post("/login", response_model=Token)

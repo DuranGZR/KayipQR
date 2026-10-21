@@ -42,7 +42,7 @@ import {
   ConversationData,
   ConversationDetailData,
 } from "@/lib/api";
-import { decodeHtmlEntities } from "@/lib/utils";
+import { decodeHtmlEntities, parseMessageMedia } from "@/lib/utils";
 import { startVisiblePolling } from "@/lib/visiblePolling";
 import { CHAT_WEBSOCKETS_ENABLED } from "@/lib/api";
 
@@ -99,15 +99,7 @@ function MessagesContent() {
   const ownerFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const extractPhotoUrl = (text: string): string | null => {
-    const match = text.match(/\[(?:Fotoğraf|Photo)\]\(([^)]+)\)/i);
-    if (match && match[1]) return match[1];
-    if (
-      text.startsWith("/uploads/") ||
-      (text.startsWith("http") && text.match(/\.(jpeg|jpg|png|webp)/i))
-    ) {
-      return text;
-    }
-    return null;
+    return parseMessageMedia(text).image;
   };
 
   // Sync deep-linked ?id= param
@@ -167,10 +159,15 @@ function MessagesContent() {
   const fetchActiveDetails = useCallback(async (convId: string, showSpinner = true) => {
     if (showSpinner) setIsLoadingDetails(true);
     try {
-      const details = await chatApi.getDetails(convId);
+      const details = await chatApi.getDetails(convId, showSpinner ? null : latestChat.current);
       if (activeIdRef.current !== convId) return;
       const hasNewMessages = details.messages.some(message => !latestChat.current?.messages.some(existing => existing.id === message.id));
-      setActiveConvDetails(details);
+      setActiveConvDetails(previous => {
+        if (previous?.id !== details.id) return details;
+        const messages = new Map(previous.messages.map(message => [message.id, message]));
+        details.messages.forEach(message => messages.set(message.id, message));
+        return { ...details, messages: Array.from(messages.values()).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)) };
+      });
       // Clear unread badge locally in list
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, unread_count: 0 } : c))
@@ -615,8 +612,7 @@ function MessagesContent() {
                     conv.last_message?.content || "Yeni konuşma başlatıldı"
                   );
                   const hasPhoto = extractPhotoUrl(rawPreview) !== null;
-                  const cleanPreview = rawPreview
-                    .replace(/📷\s*\[(?:Fotoğraf|Photo)\]\([^)]+\)/gi, "📷 Fotoğraf gönderildi")
+                  const cleanPreview = (hasPhoto ? "📷 Fotoğraf gönderildi " + parseMessageMedia(rawPreview).text : rawPreview)
                     .replace("📍 Location shared", "📍 Konum paylaşıldı")
                     .trim();
 
@@ -872,8 +868,7 @@ function MessagesContent() {
                       const isOwner = msg.sender_type === "owner";
                       const decodedContent = decodeHtmlEntities(msg.content);
                       const photoUrl = extractPhotoUrl(decodedContent);
-                      const cleanText = decodedContent
-                        .replace(/📷\s*\[(?:Fotoğraf|Photo)\]\([^)]+\)/gi, "")
+                      const cleanText = parseMessageMedia(decodedContent).text
                         .replace("📍 Location shared", "📍 Konum paylaşıldı")
                         .trim();
                       return (

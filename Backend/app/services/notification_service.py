@@ -33,7 +33,7 @@ class NotificationService:
             link=link,
         )
         db.add(notif)
-        if type_ == "qr_scanned" and item_id and await email_service.should_suppress_scan_email(item_id):
+        if type_ == "qr_scanned":
             send_email = False
 
         if send_email and user_email:

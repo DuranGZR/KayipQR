@@ -96,13 +96,13 @@ export default function CookiePolicyPage() {
                     </h2>
                     <ul className="list-disc pl-5 space-y-2">
                       <li>
-                        <strong>Zorunlu / Teknik Çerezler:</strong> Web sitesinin düzgün çalışması, güvenli oturum açma (JWT token yönetimi) ve anonim sohbet oturumunun sürdürülmesi için teknik olarak zorunludur.
+                        <strong>Zorunlu / Teknik Çerezler:</strong> Hesap oturumu localStorage veya sessionStorage içinde, bulan kişinin sohbet anahtarı localStorage içinde saklanır. Google girişi sırasında backend alan adında 5 dakika ömürlü, HttpOnly ve SameSite=Lax bir güvenlik çerezi kullanılır; production ortamında Secure bayrağı açıktır.
                       </li>
                       <li>
-                        <strong>İşlevsel Çerezler:</strong> Dil seçimi, QR tasarım stüdyosu tercihleri ve çerez onay tercihinizin hatırlanması için kullanılır.
+                        <strong>İşlevsel Çerezler:</strong> Dil seçimi ve bu bilgilendirmeye ilişkin tercihinizin hatırlanması için kullanılır.
                       </li>
                       <li>
-                        <strong>Performans ve Analitik:</strong> Sayfa ziyaret sayıları ve hata loglarının anonim olarak tespit edilmesini sağlar. Üçüncü şahıslara kişisel reklam hedeflemesi amacıyla aktarılmaz.
+                        <strong>Performans ve Analitik:</strong> Uygulamada ayrıca etkinleştirilmiş bir analitik veya reklam takip aracı bulunmaz. Barındırma sağlayıcısı işletim ve güvenlik günlükleri tutabilir.
                       </li>
                     </ul>
                   </section>
@@ -112,7 +112,7 @@ export default function CookiePolicyPage() {
                       3. Çerez Tercihlerini Yönetme
                     </h2>
                     <p>
-                      Tarayıcınızın ayarlarından çerezleri dilediğiniz zaman silebilir, engelleyebilir veya uyarı verilmesini sağlayabilirsiniz. Ancak zorunlu oturum çerezlerinin engellenmesi durumunda KayıpQR yönetim paneline giriş yapılamayabilir.
+                      Tarayıcınızın ayarlarından çerezleri dilediğiniz zaman silebilir, engelleyebilir veya uyarı verilmesini sağlayabilirsiniz. Tarayıcı depolamasını silmek oturumunuzu kapatır ve bulan kişinin kayıtlı sohbet anahtarını kaldırabilir. Google güvenlik çerezinin engellenmesi Google ile girişin tamamlanmasını engelleyebilir. Zorunlu depolama bu bilgilendirme kapatıldığında da kullanılır.
                     </p>
                   </section>
                 </div>

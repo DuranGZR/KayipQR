@@ -42,3 +42,4 @@ class ConversationResponse(BaseModel):
 class ConversationDetailResponse(ConversationResponse):
     messages: List[MessageResponse] = []
     next_cursor: Optional[str] = None
+    read_through: Optional[datetime] = None

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 from app.api.v1.endpoints import (
     auth,
+    google,
     items,
     qr,
     scans,
@@ -14,6 +15,7 @@ from app.api.v1.endpoints import (
 api_router = APIRouter()
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Kimlik Doğrulama (Auth)"])
+api_router.include_router(google.router, prefix="/auth/google", tags=["Google Giriş"])
 api_router.include_router(items.router, prefix="/items", tags=["Eşyalarım (Items)"])
 api_router.include_router(qr.router, prefix="/qr", tags=["QR Stüdyo (QR Codes)"])
 api_router.include_router(scans.router, prefix="/scans", tags=["Tarama Analitiği (Scans)"])

@@ -38,6 +38,8 @@ def read_snapshot(source: Path, uploads: Path):
             rows = []
             for row in db.execute(f'SELECT * FROM "{table.name}"'):
                 values = dict(row)
+                if table.name == "users" and "email_verified" not in values:
+                    values["email_verified"] = True
                 for column in table.columns:
                     value = values.get(column.name)
                     if value is not None and isinstance(column.type, DateTime):

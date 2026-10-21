@@ -9,7 +9,7 @@ export function parseMessageMedia(content: string): { image: string | null; text
   const pattern = /(?:📷\s*)?\[(?:Fotoğraf(?:\s*\/\s*Photo)?|Photo)\]\(([^)]+)\)/i;
   const match = content.match(pattern);
   const candidate = match?.[1] || (/^\/uploads\/[^\s]+$/.test(content) ? content : null);
-  const image = candidate && (/^\/uploads\/[a-zA-Z0-9._-]+$/.test(candidate) || /^https?:\/\//i.test(candidate)) ? candidate : null;
+  const image = candidate && (/^\/uploads\/[a-f0-9]{32}\.(?:jpg|png|webp)(?:\?expires=\d+&signature=[a-f0-9]{64})?$/.test(candidate) || /^https?:\/\//i.test(candidate)) ? candidate : null;
   return { image, text: image ? (match ? content.replace(pattern, "").trim() : "") : content };
 }
 

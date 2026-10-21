@@ -78,7 +78,7 @@ export default function PrivacyPolicyPage() {
                     Gizlilik Politikası
                   </h1>
                   <p className="text-xs text-ink-soft mt-1">
-                    Son Güncelleme: 18 Ekim 2026
+                    Son Güncelleme: 21 Ekim 2026
                   </p>
                 </div>
 
@@ -86,7 +86,7 @@ export default function PrivacyPolicyPage() {
                 <div className="p-4 rounded-xl bg-gold/20 border-[1.5px] border-ink/20 flex items-start gap-3">
                   <EyeOff className="w-5 h-5 text-amber-900 shrink-0 mt-0.5" />
                   <div className="text-xs leading-relaxed text-ink">
-                    <strong>Temel Gizlilik Prensibimiz:</strong> KayıpQR, kişisel iletişim bilgilerinizi (telefon numarası, e-posta adresi, ev adresi) eşyayı bulan kişilere <strong>asla göstermez</strong>. İletişim tamamen platform içi anonim şifreli mesajlaşma üzerinden gerçekleşir.
+                    <strong>Temel Gizlilik Prensibimiz:</strong> Hesap e-postanız ve telefon numaranız eşyanızı bulan kişiye otomatik olarak gösterilmez. Görünen adınızda, eşya bilgilerinde veya mesajlarınızda kendiniz paylaştığınız bilgiler karşı tarafa görünür. Bağlantı HTTPS ile korunur; mesajlaşma uçtan uca şifreli değildir.
                   </div>
                 </div>
 
@@ -100,7 +100,7 @@ export default function PrivacyPolicyPage() {
                       KayıpQR platformunu kullandığınızda aşağıdaki sınırlı veriler toplanır ve güvenli sunucularda saklanır:
                     </p>
                     <ul className="list-disc pl-5 space-y-1">
-                      <li><strong>Hesap Bilgileri:</strong> E-posta adresi, şifrelenmiş parola (bcrypt hash), ad-soyad (isteğe bağlı) ve isteğe bağlı telefon numarası (üçüncü taraflarla veya bulan kişilerle asla paylaşılmaz).</li>
+                      <li><strong>Hesap Bilgileri:</strong> E-posta adresi, Argon2id parola özeti (eski hesaplarda bcrypt geçiş desteği), doğrulama durumu, isteğe bağlı ad-soyad ve telefon numarası. Google ile giriş seçilirse Google hesap kimliği, doğrulanmış e-posta ve ad bilgisi alınır; Google parolanız alınmaz.</li>
                       <li><strong>Eşya Bilgileri:</strong> Eşya adı, kategori, açıklama, opsiyonel fotoğraf ve QR tasarım ayarları.</li>
                       <li><strong>Tarama ve İletişim Verileri:</strong> QR tarandığında cihaz türü (Mobil/Masaüstü), yaklaşık şehir (IP bazlı genel bölge), bulan kişinin gönderdiği anonim mesajlar ve isteğe bağlı paylaşılan konum bilgileri.</li>
                     </ul>
@@ -114,7 +114,8 @@ export default function PrivacyPolicyPage() {
                       Toplanan veriler yalnızca şu amaçlarla işlenir:
                     </p>
                     <ul className="list-disc pl-5 space-y-1">
-                      <li>Kayıp eşyanız bulunduğunda size anlık bildirim (e-posta, site içi uyarı) göndermek.</li>
+                      <li>QR taramaları ve mesajlar için site içi bildirim oluşturmak. Tercihiniz açıksa her yeni konuşmanın yalnızca ilk mesajında e-posta göndermek; QR taramalarında ve sonraki mesajlarda e-posta göndermemek.</li>
+                      <li>Yeni hesabın e-posta adresini doğrulamak ve talebiniz üzerine şifre sıfırlama bağlantısı göndermek. Şifre sıfırlama talepleri aynı adres için 60 saniyede bir e-posta ile sınırlıdır.</li>
                       <li>Bulan kişi ile aranızda güvenli ve anonim sohbet oturumu sağlamak.</li>
                       <li>QR kod tarama istatistiklerini ve güvenlik loglarını yönetmek.</li>
                       <li>Spam, bot saldırıları ve kötüye kullanımı engellemek.</li>
@@ -128,6 +129,9 @@ export default function PrivacyPolicyPage() {
                     <p>
                       Kullanıcılarımız diledikleri zaman hesap ayarları üzerinden eşyalarını kalıcı olarak silebilir veya hesaplarının tüm verileriyle birlikte silinmesini talep edebilir. Bir eşya silindiğinde, ona bağlı tüm konuşma kayıtları ve QR tarama geçmişi veritabanından kalıcı olarak temizlenir.
                     </p>
+                    <p>Sohbet fotoğrafları 30 gün geçtikten sonraki günlük bakımda kaldırılır; yazılı mesajlar hesap veya ilgili kayıt silinene kadar kalır. Yeni mesajların ya da profil/eşya görsellerinin kullandığı ortak dosyalar korunabilir. Sağlayıcı yedeklerindeki kopyalar sağlayıcının saklama süresi boyunca bulunabilir.</p>
+                    <p>Barındırma için Vercel ve bağlı veritabanı sağlayıcısı, e-posta gönderimi için Resend kullanılır. Google yalnızca Google ile giriş seçildiğinde kimlik doğrulama akışına katılır. Hizmetlerin çalışması için gerekli veriler bu sağlayıcılar tarafından işlenebilir.</p>
+                    <p>Açık sohbette mesajlar yaklaşık 15, konuşma listesi 30, bildirim listesi 60 saniyede bir yenilenir. Gizli sekmelerde yenileme durur. Tarayıcı bildirimleri izin ve açık sayfa gerektirir; site kapalıyken Web Push bildirimi gönderilmez. E-posta teslimi sağlayıcının erişilebilirliğine bağlıdır.</p>
                   </section>
 
                   <section id="privacy-4" className="space-y-2 scroll-mt-6">
@@ -135,7 +139,7 @@ export default function PrivacyPolicyPage() {
                       4. İletişim ve Güvenlik Bildirimi
                     </h2>
                     <p>
-                      Gizlilik ve veri güvenliği politikalarımız hakkında her türlü soru ve talebiniz için <strong>destek@kayipqr.com</strong> adresinden bize dilediğiniz an ulaşabilirsiniz.
+                      Gizlilik ve veri güvenliği politikalarımız hakkında her türlü soru ve talebiniz için <strong>contact@durangezer.com</strong> adresinden bize dilediğiniz an ulaşabilirsiniz.
                     </p>
                   </section>
                 </div>

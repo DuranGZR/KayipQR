@@ -40,7 +40,7 @@ const FEATURES = [
     icon: BellRing,
     tag: "TARAMALAR VE MESAJLAR",
     title: "Tarama ve mesajları takip et",
-    desc: "QR taramalarını ve gelen mesajları hesabında gör. E-posta uyarılarını tercihlerine göre aç; bulan kişi isterse konumunu da paylaşabilir.",
+    desc: "QR taramalarını ve gelen mesajları hesabında gör. Her yeni konuşmanın ilk mesajı için e-posta uyarısını aç; bulan kişi isterse konumunu da paylaşabilir.",
     highlight: "Gelişmeleri hesabından takip et.",
     tapeColor: "bg-gold/90",
     tapeRotate: "-rotate-1",

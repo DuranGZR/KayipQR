@@ -1,3 +1,4 @@
+from tests.helpers import verified_registration, verified_registration_sync
 import io
 from urllib.parse import urlsplit
 import pytest
@@ -104,7 +105,7 @@ async def test_full_backend_workflow():
             "password": "securepassword123",
             "full_name": "Duran B.",
         }
-        reg_res = await ac.post("/api/v1/auth/register", json=register_payload)
+        reg_res = await verified_registration(ac, register_payload)
         assert reg_res.status_code in [201, 400]
 
         # 2. Login
@@ -188,14 +189,11 @@ async def test_profile_preferences_reset_and_account_deletion():
     unique_email = f"delete_test_{uuid.uuid4().hex[:8]}@example.com"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # 1. Register a temporary user
-        reg_res = await ac.post(
-            "/api/v1/auth/register",
-            json={
+        reg_res = await verified_registration(ac, {
                 "email": unique_email,
                 "password": "initialpassword123",
                 "full_name": "Silinecek Kullanıcı",
-            },
-        )
+            })
         assert reg_res.status_code == 201
         token = reg_res.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
@@ -263,14 +261,11 @@ async def test_privacy_closed_conversation_and_photo_cleanup():
 
     unique_email = f"privacy_test_{uuid.uuid4().hex[:8]}@example.com"
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-        reg_res = await ac.post(
-            "/api/v1/auth/register",
-            json={
+        reg_res = await verified_registration(ac, {
                 "email": unique_email,
                 "password": "securepassword123",
                 "full_name": "Gizlilik Test",
-            },
-        )
+            })
         assert reg_res.status_code == 201
         token = reg_res.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
@@ -367,17 +362,11 @@ async def test_cross_user_file_deletion_protection_and_turkish_qr_png_and_saniti
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # Register User A & User B
-        reg_a = await ac.post(
-            "/api/v1/auth/register",
-            json={"email": user_a_email, "password": "password123", "full_name": "Kullanıcı A"},
-        )
+        reg_a = await verified_registration(ac, {"email": user_a_email, "password": "password123", "full_name": "Kullanıcı A"})
         assert reg_a.status_code == 201
         headers_a = {"Authorization": f"Bearer {reg_a.json()['access_token']}"}
 
-        reg_b = await ac.post(
-            "/api/v1/auth/register",
-            json={"email": user_b_email, "password": "password123", "full_name": "Kullanıcı B"},
-        )
+        reg_b = await verified_registration(ac, {"email": user_b_email, "password": "password123", "full_name": "Kullanıcı B"})
         assert reg_b.status_code == 201
         headers_b = {"Authorization": f"Bearer {reg_b.json()['access_token']}"}
 

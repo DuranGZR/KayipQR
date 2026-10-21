@@ -62,7 +62,7 @@ export const CookieConsent = () => {
               </div>
 
               <p className="text-[12px] text-ink-soft leading-relaxed">
-                Deneyiminizi iyileştirmek, oturum güvenliğini sağlamak ve anonim analizler için çerezler kullanıyoruz. Detaylar için{" "}
+                Oturumunu ve dil tercihini hatırlamak için tarayıcı depolaması, Google girişi sırasında güvenlik çerezi kullanıyoruz. Detaylar için{" "}
                 <Link href="/cookies" className="font-bold text-ink underline hover:text-gold-dark">
                   Çerez Politikamızı
                 </Link>{" "}

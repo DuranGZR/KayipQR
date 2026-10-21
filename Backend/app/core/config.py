@@ -122,6 +122,8 @@ class Settings(BaseSettings):
     EMAILS_FROM_NAME: str = "KayıpQR"
     EMAIL_PROVIDER: Literal["smtp", "resend"] = "smtp"
     RESEND_API_KEY: str = ""
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
 
     @model_validator(mode="after")
     def validate_production(self):

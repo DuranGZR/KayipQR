@@ -29,12 +29,12 @@ KayıpQR bir GPS takip cihazı değildir; eşyanın bulunmasını veya geri dön
 - **Bulan kişi sayfası:** Üyeliksiz ilk mesaj, fotoğraf ekleme, isteğe bağlı konum paylaşımı ve Türkçe/İngilizce arayüz.
 - **Sohbet:** Fotoğraf, konum ve okundu bilgisi; Vercel profilinde görünür sekmede periyodik güncelleme. Sürekli çalışan backend için WebSocket seçeneği.
 - **Tarama geçmişi:** Tarama zamanı, cihaz bilgileri ve mevcutsa yaklaşık bölge; harici GeoIP varsayılan olarak kapalıdır.
-- **Bildirimler:** Site içi bildirim listesi, desteklenen tarayıcılarda izinle açık sayfa bildirimi ve tercihe bağlı e-posta.
+- **Bildirimler:** Site içi bildirim listesi, desteklenen tarayıcılarda izinle açık sayfa bildirimi ve her yeni konuşmanın ilk mesajı için tercihe bağlı e-posta. QR taramalarında ve sonraki mesajlarda e-posta gönderilmez.
 - **Mobil web:** İki sütunlu eşya kartları, ilk altı karttan sonra “Hepsini göster”, açılır hesap menüsü ve dokunmaya uygun kontroller.
 
 ### Bildirimlerin sınırları
 
-Vercel profilinde açık sohbet yaklaşık 15, konuşma listesi 30, zil 60 saniyede bir güncellenir; gizli sekmelerde kontroller durur. Sohbet fotoğrafları 30 gün sonrasındaki günlük bakımda kaldırılır, yazılı mesajlar kalır. Tarayıcı bildirimi destek ve izin gerektirir; site kapalıyken çalışan Web Push altyapısı bulunmaz. E-posta için Resend veya uygun dağıtımda SMTP ayarları gerekir. Yerel varsayılan ayarlar gerçek e-posta göndermez.
+Vercel profilinde açık sohbet yaklaşık 15, konuşma listesi 30, zil 60 saniyede bir güncellenir; gizli sekmelerde kontroller durur. Sohbet açılışından sonraki yenilemeler son mesajdan sonraki kayıtları alır; eski fotoğraf imzaları süresi dolmadan yenilenir. Sohbet fotoğrafları 30 gün sonrasındaki günlük bakımda kaldırılır, yazılı mesajlar kalır. Tarayıcı bildirimi destek ve izin gerektirir; site kapalıyken çalışan Web Push altyapısı bulunmaz. E-posta için Resend veya uygun dağıtımda SMTP ayarları gerekir. Yerel varsayılan ayarlar gerçek e-posta göndermez.
 
 Telefon numarası ve hesap e-postası herkese açık eşya yanıtında yer almaz. Paylaşmayı seçtiğin sahip adı, eşya bilgileri ve mesaj içine kendin yazdığın bilgiler karşı tarafa görünebilir. Mesajlaşma için uçtan uca şifreleme iddiası bulunmaz.
 
@@ -132,7 +132,7 @@ npm run dev
 | `http://127.0.0.1:8000/health` | Process canlılık kontrolü |
 | `http://127.0.0.1:8000/ready` | Bağımlılıkların hazır olma kontrolü |
 
-İlk hesabını kayıt sayfasından oluştur. Depoda hazır giriş bilgileri veya gerçek kullanıcı veritabanı bulunmaz.
+İlk hesabını kayıt sayfasından oluştur ve e-postana gelen bağlantıyla doğrula. Gerçek e-posta için Resend veya SMTP yapılandırması gerekir. Google ile giriş kurulumu: [Google rehberi](Backend/GOOGLE_AUTH.md). Depoda hazır giriş bilgileri veya gerçek kullanıcı veritabanı bulunmaz.
 
 ### Ortam değişkenleri
 
@@ -156,6 +156,8 @@ npm run dev
 
 # Frontend dizininde
 node tests/api-pagination.cjs
+node tests/visible-polling.cjs
+node tests/message-media.cjs
 npx tsc --noEmit
 npm run build
 ```

@@ -10,6 +10,8 @@ export interface User {
   is_active: boolean;
   email_on_scan?: boolean;
   email_on_message?: boolean;
+  email_verified?: boolean;
+  has_password?: boolean;
 }
 
 export interface AuthResponse {
@@ -87,6 +89,7 @@ export interface ConversationData {
 export interface ConversationDetailData extends ConversationData {
   messages: MessageData[];
   next_cursor?: string | null;
+  read_through?: string | null;
 }
 
 export interface PublicItemData {
@@ -216,8 +219,23 @@ export const getPublicAppUrl = (): string => {
   return "https://kayipqr.com";
 };
 
+async function authAction<T>(path: string, data: object): Promise<T> {
+  const response = await fetch(`${API_BASE}/auth/${path}`, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data) });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(typeof result.detail === "string" ? result.detail : "İşlem tamamlanamadı."), {retryAfter: Number(response.headers.get("Retry-After")) || 0});
+  return result;
+}
+
+export const googleAuthApi = {
+  config: async (): Promise<{enabled: boolean}> => { const response = await fetch(`${API_BASE}/auth/google/config`); if (!response.ok) return {enabled:false}; return response.json(); },
+  startUrl: (redirect: string) => `${API_BASE}/auth/google/start?redirect=${encodeURIComponent(redirect)}`,
+  exchange: (token: string) => authAction<AuthResponse>("google/exchange", {token}),
+};
+
 export const authApi = {
-  register: async (data: { email: string; password: string; full_name?: string; phone_number?: string }): Promise<AuthResponse> => {
+  verifyEmail: (token: string) => authAction<AuthResponse>("verify-email", {token}),
+  resendVerification: (email: string) => authAction<{message: string; retry_after: number}>("resend-verification", {email}),
+  register: async (data: { email: string; password: string; full_name?: string; phone_number?: string }): Promise<{message: string; email: string; verification_required: boolean}> => {
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -314,7 +332,7 @@ export const authApi = {
     return body;
   },
 
-  forgotPassword: async (email: string): Promise<{ message: string }> => {
+  forgotPassword: async (email: string): Promise<{ message: string; retry_after: number }> => {
     const res = await fetch(`${API_BASE}/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -323,7 +341,7 @@ export const authApi = {
 
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      throw new Error(body.detail || "Şifre sıfırlama isteği gönderilemedi.");
+      throw Object.assign(new Error(body.detail || "Şifre sıfırlama isteği gönderilemedi."), { retryAfter: Number(res.headers.get("Retry-After")) || 0 });
     }
     return body;
   },
@@ -385,14 +403,17 @@ async function fetchListPages<T extends { id: string }>(path: string, errorMessa
   }
 }
 
-async function fetchConversationHistory(path: string, authenticated: boolean): Promise<ConversationDetailData> {
+async function fetchConversationHistory(path: string, authenticated: boolean, previous?: ConversationDetailData | null): Promise<ConversationDetailData> {
+  // Refresh expiring image capabilities occasionally, rather than every polling round.
+  if (previous?.messages.some(message => Array.from(message.content.matchAll(/[?&]expires=(\d+)/g)).some(match => Number(match[1]) * 1000 < Date.now() + 60000))) previous = null;
+  const incremental = !!previous?.messages.length;
   let first: ConversationDetailData | undefined;
   const pages: MessageData[][] = [];
   const visited = new Set<string>();
-  let cursor: string | null | undefined;
+  let cursor: string | null | undefined = incremental ? previous!.messages[previous!.messages.length - 1].id : undefined;
   do {
     const params = new URLSearchParams({ limit: "100" });
-    if (cursor) params.set("before", cursor);
+    if (cursor) params.set(incremental ? "after" : "before", cursor);
     const res = await fetch(`${API_BASE}${path}?${params}`, authenticated ? { headers: getHeaders() } : {});
     if (authenticated) handleAuthFailureIfNeeded(res);
     if (!res.ok) {
@@ -406,7 +427,13 @@ async function fetchConversationHistory(path: string, authenticated: boolean): P
     if (cursor && visited.has(cursor)) throw new Error("Sohbet sayfalaması tamamlanamadı.");
     if (cursor) visited.add(cursor);
   } while (cursor);
-  return { ...first!, messages: pages.reverse().flat(), next_cursor: null };
+  const incoming = (incremental ? pages : pages.reverse()).flat();
+  const byId = new Map((incremental ? previous!.messages : []).map(message => [message.id, message]));
+  incoming.forEach(message => byId.set(message.id, message));
+  const ownSender = authenticated ? "owner" : "finder";
+  const messages = Array.from(byId.values()).map(message => first?.read_through && message.sender_type === ownSender &&
+    new Date(message.created_at).getTime() <= new Date(first.read_through).getTime() ? { ...message, is_read: true } : message);
+  return { ...first!, messages, next_cursor: null };
 }
 
 export const itemsApi = {
@@ -556,8 +583,8 @@ export const chatApi = {
     return fetchListPages<ConversationData>(`/conversations?${params.toString()}`, "Konuşmalar yüklenemedi.");
   },
 
-  getDetails: async (conversationId: string): Promise<ConversationDetailData> => {
-    return fetchConversationHistory(`/conversations/${conversationId}`, true);
+  getDetails: async (conversationId: string, previous?: ConversationDetailData | null): Promise<ConversationDetailData> => {
+    return fetchConversationHistory(`/conversations/${conversationId}`, true, previous?.id === conversationId ? previous : null);
   },
 
   sendMessage: async (
@@ -711,8 +738,8 @@ export const publicApi = {
     return res.json();
   },
 
-  getFinderConversation: async (sessionToken: string): Promise<ConversationDetailData> => {
-    return fetchConversationHistory(`/conversations/finder/${encodeURIComponent(sessionToken)}`, false);
+  getFinderConversation: async (sessionToken: string, previous?: ConversationDetailData | null): Promise<ConversationDetailData> => {
+    return fetchConversationHistory(`/conversations/finder/${encodeURIComponent(sessionToken)}`, false, previous);
   },
 
   sendFinderMessage: async (

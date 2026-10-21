@@ -1,4 +1,5 @@
 "use client";
+import { GoogleSignIn } from "@/components/auth/GoogleSignIn";
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
@@ -162,6 +163,8 @@ export default function LoginPage() {
             </AnimatePresence>
 
             {/* Form */}
+            <GoogleSignIn redirect={redirectParam || "/dashboard"} disabled={isLoading} />
+            <Link href="/verify-email" className="relative z-10 block text-xs underline mb-4">Doğrulama e-postasını yeniden gönder</Link>
             <form onSubmit={handleSubmit} className="space-y-4 relative z-10">
               
               {/* Email Field */}
@@ -281,7 +284,7 @@ export default function LoginPage() {
           className="mt-4 text-center text-[11.5px] text-ink-soft flex items-center justify-center gap-1.5"
         >
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
-          <span>KVKK Uyumlu · Bilgileriniz asla 3. şahıslara açılmaz</span>
+          <span>Hesap e-postan ve telefonun bulan kişiye otomatik gösterilmez.</span>
         </motion.p>
 
       </motion.div>

@@ -43,8 +43,6 @@ async def record_scan_in_background(
                 approximate_country=country,
             )
             
-            # Check owner's notification preferences
-            send_email = item.owner.email_on_scan if item.owner else True
             owner_email = item.owner.email if item.owner else None
 
             location_text = f" ({scan.approximate_city})" if scan.approximate_city else ""
@@ -56,7 +54,7 @@ async def record_scan_in_background(
                 body=f"'{item.name}' eşyanızın QR kodu {scan.device_type} bir cihaz tarafından tarandı{location_text}.",
                 item_id=item.id,
                 link=f"/dashboard?item={item.id}",
-                send_email=send_email,
+                send_email=False,
                 user_email=owner_email,
                 extra_data={
                     "item_name": item.name,

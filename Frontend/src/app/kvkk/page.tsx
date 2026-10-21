@@ -86,7 +86,7 @@ export default function KvkkPage() {
                       <Shield className="w-4 h-4 text-gold-dark" /> 1. Veri Sorumlusu Sıfatı
                     </h2>
                     <p>
-                      6698 sayılı Kişisel Verilerin Korunması Kanunu (“KVKK”) uyarınca, <strong>KayıpQR Dijital İletişim Platformu</strong> (“KayıpQR”, İletişim: <strong>destek@kayipqr.com</strong>) olarak kişisel verileriniz veri sorumlusu sıfatıyla aşağıda açıklanan çerçevede, hukuka ve dürüstlük kurallarına uygun olarak işlenmektedir.
+                      6698 sayılı Kişisel Verilerin Korunması Kanunu (“KVKK”) uyarınca, <strong>KayıpQR Dijital İletişim Platformu</strong> (“KayıpQR”, İletişim: <strong>contact@durangezer.com</strong>) olarak kişisel verileriniz veri sorumlusu sıfatıyla aşağıda açıklanan çerçevede, hukuka ve dürüstlük kurallarına uygun olarak işlenmektedir.
                     </p>
                   </section>
 
@@ -119,7 +119,7 @@ export default function KvkkPage() {
                       <li>Kişisel verilerin silinmesini veya yok edilmesini isteme haklarına sahiptir.</li>
                     </ul>
                     <p className="pt-2">
-                      Haklarınıza ilişkin taleplerinizi <strong>destek@kayipqr.com</strong> e-posta adresi üzerinden iletebilirsiniz.
+                      Barındırma ve veritabanı hizmetleri, Resend e-posta gönderimi ve isteğe bağlı Google girişi için hizmetin gerektirdiği veriler ilgili sağlayıcılarca işlenebilir. Sohbet fotoğrafları 30 gün sonrasındaki günlük bakımda kaldırılır; yazılı mesajlar ilgili kayıt silinene kadar saklanır. Haklarınıza ilişkin taleplerinizi <strong>contact@durangezer.com</strong> e-posta adresi üzerinden iletebilirsiniz.
                     </p>
                   </section>
                 </div>

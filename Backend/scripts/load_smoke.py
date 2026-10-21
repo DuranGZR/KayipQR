@@ -9,6 +9,7 @@ import json
 import statistics
 import time
 import uuid
+import os
 from collections import Counter
 from urllib.parse import urlsplit
 import httpx
@@ -16,6 +17,8 @@ from websockets.asyncio.client import connect
 
 
 async def run(args):
+    if os.environ.get("ENVIRONMENT") != "test":
+        raise ValueError("Signup smoke requires ENVIRONMENT=test and an isolated test database.")
     urls = [url.rstrip("/") for url in args.base_url]
     for url in urls:
         parsed = urlsplit(url)
@@ -27,6 +30,19 @@ async def run(args):
         account = await client.post(urls[0] + "/api/v1/auth/register", json={
             "email": f"load-{uuid.uuid4().hex}@example.com", "password": uuid.uuid4().hex,
         })
+        account.raise_for_status()
+        # Simulate opening the test inbox; there is no production verification bypass.
+        from pathlib import Path
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from app.db.session import AsyncSessionLocal
+        from app.models.user import User
+        from app.core.security import create_email_verification_token
+        from sqlalchemy import select
+        async with AsyncSessionLocal() as db:
+            user = (await db.execute(select(User).where(User.email == account.json()["email"]))).scalar_one()
+            verification = create_email_verification_token(user)
+        account = await client.post(urls[0] + "/api/v1/auth/verify-email", json={"token": verification})
         account.raise_for_status()
         token = account.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
