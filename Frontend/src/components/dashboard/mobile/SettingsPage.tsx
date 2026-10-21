@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowUpRight, Bell, ChevronRight, Download, Eye, EyeOff, KeyRound, Loader2, LogOut, ShieldCheck, Trash2, UserRound, X, Check } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, Bell, ChevronRight, Eye, EyeOff, KeyRound, Loader2, LogOut, ShieldCheck, Trash2, UserRound, X, Check } from "lucide-react";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { Sheet } from "@/components/ui/Sheet";
 import { useToast } from "@/components/ui/ToastProvider";
-import { authApi, itemsApi, chatApi, notificationsApi, scansApi, getAuthToken, clearAuthTokens, getStoredUser, setAuthSession, getPublicAppUrl, User } from "@/lib/api";
+import { authApi, getAuthToken, clearAuthTokens, getStoredUser, setAuthSession, User } from "@/lib/api";
 
-type Section = "profile" | "notifications" | "password" | "data" | "account" | null;
-const sectionNames = { profile: "Profil bilgileri", notifications: "Bildirim tercihleri", password: "Şifre değiştir", data: "Verilerini indir", account: "Hesap işlemleri" };
+type Section = "profile" | "notifications" | "password" | "account" | null;
+const sectionNames = { profile: "Profil bilgileri", notifications: "Bildirim tercihleri", password: "Şifre değiştir", account: "Hesap işlemleri" };
 export default function SettingsPage() {
   const router = useRouter(); const toast = useToast();
   const [user, setUser] = useState<User | null>(null);
@@ -27,7 +27,6 @@ export default function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteText, setDeleteText] = useState("");
   const [logoutOpen, setLogoutOpen] = useState(false);
-  const [exportProgress, setExportProgress] = useState("");
   const [permission, setPermission] = useState("unsupported");
   const operationLock = useRef(false);
   const dirty = !!user && (name !== (user.full_name || "") || phone !== (user.phone_number || "") || onMessage !== (user.email_on_message ?? true) || !!currentPassword || !!password || !!repeat);
@@ -67,28 +66,12 @@ export default function SettingsPage() {
     } catch (cause) { setErrors({ form: (cause as Error).message }); }
     finally { operationLock.current = false; setBusy(false); }
   };
-  const exportData = async () => {
-    if (operationLock.current) return; operationLock.current = true; setBusy(true); setErrors({}); setExportProgress("Kayıtların alınıyor…");
-    try {
-      const [items, conversations, notifications, recentScans] = await Promise.all([
-        itemsApi.list(), chatApi.list("all").catch(() => []), notificationsApi.list().catch(() => []), scansApi.getRecent(50).catch(() => []),
-      ]);
-      const blob = new Blob([JSON.stringify({
-        export_date: new Date().toISOString(), user, items, conversations, notifications, recent_scans: recentScans,
-        platform: `KayıpQR (${getPublicAppUrl()})`, gdpr_kvkk_note: "Kullanıcının talep ettiği taşınabilir kişisel veri dökümüdür.",
-      }, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `kayipqr-verilerim-${new Date().toISOString().slice(0, 10)}.json`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setExportProgress("Dosyan hazır. İndirilenler klasörünü kontrol edebilirsin."); toast.success("Veri dosyan hazırlandı.");
-    } catch (cause) { setErrors({ form: (cause as Error).message || "Veriler hazırlanamadı." }); setExportProgress(""); }
-    finally { setBusy(false); operationLock.current = false; }
-  };
   const editable = section === "profile" || section === "notifications" || section === "password";
   const fieldError = (key: string) => errors[key] && <p role="alert" className="text-sm text-rose-700 mt-2">{errors[key]}</p>;
   const links = [
     { id: "profile" as const, icon: UserRound, label: "Profil bilgileri", hint: "Adın ve iletişim bilgilerin", color: "bg-[#eee8dc]" },
     { id: "notifications" as const, icon: Bell, label: "Bildirim tercihleri", hint: "Nelerden haberdar olmak istersin?", color: "bg-[#f8edcf]" },
     { id: "password" as const, icon: KeyRound, label: "Şifre değiştir", hint: "Hesabının güvenliğini yönet", color: "bg-[#e7ede2]" },
-    { id: "data" as const, icon: Download, label: "Verilerimi indir", hint: "Kayıtlarının bir kopyasını al", color: "bg-[#e3ece9]" },
     { id: "account" as const, icon: ShieldCheck, label: "Hesap işlemleri", hint: "Oturum ve hesap yönetimi", color: "bg-[#eee8dc]" },
   ];
   return <div className="app-shell min-h-screen flex flex-col md:flex-row"><Sidebar />
@@ -109,7 +92,6 @@ export default function SettingsPage() {
         </div>}
         {section === "password" && user.has_password === false && <p className="app-card text-sm leading-relaxed">Google ile giriş yapıyorsun. E-posta ile giriş için <a className="underline" href="/forgot-password">şifre belirleme bağlantısı isteyebilirsin</a>.</p>}
         {section === "password" && user.has_password !== false && <form id="settings-form" className="app-card space-y-5" onSubmit={event => { event.preventDefault(); save(); }}><p className="text-sm leading-relaxed text-ink-soft">Tahmin edilmesi zor, başka bir yerde kullanmadığın bir şifre seç.</p>{[{ id: "current", label: "Mevcut şifren", value: currentPassword, set: setCurrentPassword, auto: "current-password" }, { id: "password", label: "Yeni şifren", value: password, set: setPassword, auto: "new-password" }, { id: "repeat", label: "Yeni şifreni tekrar yaz", value: repeat, set: setRepeat, auto: "new-password" }].map(field => <div key={field.id}><label className="app-label" htmlFor={field.id}>{field.label}</label><input id={field.id} type={showPassword ? "text" : "password"} autoComplete={field.auto} className="app-input" required maxLength={128} value={field.value} aria-invalid={!!errors[field.id]} onChange={event => field.set(event.target.value)} />{fieldError(field.id)}</div>)}<button type="button" className="app-button w-full" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}{showPassword ? "Şifreleri gizle" : "Şifreleri göster"}</button></form>}
-        {section === "data" && <section className="app-card"><div className="w-14 h-14 bg-[#e3ece9] rounded-2xl flex items-center justify-center mb-5"><Download className="text-[#1E7E75]" size={26} /></div><h2 className="text-xl font-extrabold">Kayıtlarının bir kopyası.</h2><p className="text-sm leading-relaxed text-ink-soft my-4">Profilin, eşyaların, konuşma listen, bildirimlerin ve son 50 tarama kaydın JSON dosyası olarak hazırlanır.</p><button className="app-button app-button-primary w-full mt-2" disabled={busy} onClick={exportData}>{busy ? <Loader2 size={18} className="animate-spin" /> : <Download size={18} />}{busy ? "Dosyan hazırlanıyor…" : "Verilerimi indir (.json)"}</button>{exportProgress && <p role="status" className="text-sm text-[#1E7E75] mt-4">{exportProgress}</p>}</section>}
         {section === "account" && <div className="space-y-5"><section className="app-card"><h2 className="font-extrabold text-lg">Oturumun</h2><p className="text-sm text-ink-soft mt-2 mb-5">Bu cihazdaki hesabından güvenle çıkış yap.</p><button className="app-button w-full" onClick={() => setLogoutOpen(true)}><LogOut size={18} />Çıkış yap</button></section><section className="app-card !border-rose-200"><h2 className="font-extrabold text-lg text-rose-800">Hesabını sil</h2><p className="text-sm text-ink-soft leading-relaxed mt-2 mb-5">Hesabınla birlikte eşyaların, QR kodların ve konuşmaların kalıcı olarak silinir. Basılı etiketlerin artık çalışmaz.</p><button className="app-button w-full text-rose-700 !border-rose-200" onClick={() => setDeleteOpen(true)}><Trash2 size={18} />Hesabımı sil</button></section></div>}
         {errors.form && <p role="alert" className="app-error mt-5">{errors.form}</p>}
         {editable && <><button className="app-button app-button-primary w-full mt-6 hidden md:flex" disabled={!dirty || busy} onClick={save}>{busy ? "Kaydediliyor…" : "Değişiklikleri kaydet"}</button><div className="app-mobile-action"><button className="app-button flex-1 app-button-primary" disabled={!dirty || busy} onClick={save}>{busy ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}{busy ? "Kaydediliyor…" : dirty ? "Değişiklikleri kaydet" : "Tüm değişiklikler kaydedildi"}</button></div></>}

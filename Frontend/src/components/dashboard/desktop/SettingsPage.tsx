@@ -18,7 +18,6 @@ import {
   EyeOff,
   LogOut,
   Loader2,
-  Download,
   Trash2,
   AlertTriangle,
   X,
@@ -29,7 +28,7 @@ import {
   WobblyButtonFrame,
 } from "@/components/ui/SketchBorders";
 import { Sidebar } from "./Sidebar";
-import { authApi, itemsApi, chatApi, notificationsApi, scansApi, getPublicAppUrl, getAuthToken, clearAuthTokens, User as UserType } from "@/lib/api";
+import { authApi, getAuthToken, clearAuthTokens, User as UserType } from "@/lib/api";
 import { haptic } from "@/lib/haptics";
 import {
   staggerContainer,
@@ -61,48 +60,10 @@ export default function SettingsPage() {
   const [passwordSuccessMsg, setPasswordSuccessMsg] = useState("");
   const [passwordErrorMsg, setPasswordErrorMsg] = useState("");
 
-  // Data Export & Danger Zone states
-  const [isExporting, setIsExporting] = useState(false);
+  // Account deletion states
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
-
-  const handleExportData = async () => {
-    haptic.lightTap();
-    setIsExporting(true);
-    try {
-      const [userItems, userConversations, userNotifications, recentScans] = await Promise.all([
-        itemsApi.list(),
-        chatApi.list("all").catch(() => []),
-        notificationsApi.list().catch(() => []),
-        scansApi.getRecent(50).catch(() => []),
-      ]);
-      const exportData = {
-        export_date: new Date().toISOString(),
-        user: currentUser,
-        items: userItems,
-        conversations: userConversations,
-        notifications: userNotifications,
-        recent_scans: recentScans,
-        platform: `KayıpQR (${getPublicAppUrl()})`,
-        gdpr_kvkk_note: "Kullanıcının talep ettiği taşınabilir kişisel veri dökümüdür.",
-      };
-
-      const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(exportData, null, 2));
-      const downloadAnchor = document.createElement("a");
-      downloadAnchor.setAttribute("href", dataStr);
-      downloadAnchor.setAttribute("download", `kayipqr_verilerim_${new Date().toISOString().split("T")[0]}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
-
-      haptic.success();
-    } catch (err: any) {
-      haptic.error();
-    } finally {
-      setIsExporting(false);
-    }
-  };
 
   const handleDeleteAccount = async () => {
     haptic.warning();
@@ -512,34 +473,6 @@ export default function SettingsPage() {
                       </motion.button>
                     </div>
                   </form>
-                </div>
-              </div>
-
-              {/* Data Export (KVKK/GDPR Portability) */}
-              <div className="relative bg-paper-card p-5 rounded-[18px] shadow-xs">
-                <WobblyBoxFrame stroke="#33302B" strokeWidth={1.4} />
-                <div className="relative z-10 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-ink font-bold text-xs">
-                      <Download className="w-4 h-4 text-gold-dark" />
-                      <span>Verilerimi Dışa Aktar</span>
-                    </div>
-                    <span className="text-[10px] font-mono text-ink-soft bg-white px-2 py-0.5 rounded border border-ink/15">
-                      JSON
-                    </span>
-                  </div>
-                  <p className="text-[11.5px] text-ink-soft leading-relaxed">
-                    Tüm eşya ve QR kayıtlarınızı taşınabilir JSON dosyası olarak tek tıkla bilgisayarınıza indirebilirsiniz.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={handleExportData}
-                    disabled={isExporting}
-                    className="w-full py-2 px-3 rounded-lg bg-white hover:bg-gold text-ink font-bold text-xs border border-ink/25 shadow-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
-                  >
-                    {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-                    <span>{isExporting ? "Hazırlanıyor..." : "Verilerimi İndir (.json)"}</span>
-                  </button>
                 </div>
               </div>
 
