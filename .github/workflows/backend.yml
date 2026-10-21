@@ -103,6 +103,20 @@ jobs:
       - run: node tests/message-media.cjs
       - run: npm audit --omit=dev --audit-level=moderate
       - run: npm run build
+        env:
+          NEXT_PUBLIC_APP_URL: https://seo-check.example
+      - name: Public SEO and private-route indexing checks
+        run: |
+          npm run start -- --port 3014 > /tmp/kayipqr-seo.log 2>&1 &
+          server=$!
+          trap 'kill "$server" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://localhost:3014/ > /dev/null; then ready=true; break; fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then cat /tmp/kayipqr-seo.log; exit 1; fi
+          SEO_EXPECTED_ORIGIN=https://seo-check.example node scripts/check-seo.mjs http://localhost:3014
       - name: Frontend container startup and Railway PORT
         run: |
           docker build -t kayipqr-frontend-ci .

@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SITE_URL, SITE_DESCRIPTION } from "@/lib/seo";
 import { Plus_Jakarta_Sans, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
@@ -28,13 +29,13 @@ const jetbrainsMono = JetBrains_Mono({
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#FAF6EE" };
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://kayipqr.com"),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: "KayıpQR — Eşyaların için QR etiket",
+    default: "KayıpQR — Ücretsiz Kayıp Eşya QR Etiketi",
     template: "%s | KayıpQR",
   },
   description:
-    "Eşyana QR etiketi ekle. Bulan kişi telefon numaranı görmeden sana mesaj göndersin. Etiketini ücretsiz oluştur, indir ve bastır.",
+    SITE_DESCRIPTION,
   keywords: [
     "kayıp eşya",
     "QR kod",
@@ -50,17 +51,19 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "tr_TR",
-    url: process.env.NEXT_PUBLIC_APP_URL || "https://kayipqr.com",
+    url: SITE_URL,
     siteName: "KayıpQR",
-    title: "KayıpQR — Eşyaların için QR etiket",
+    images: [{ url: `${SITE_URL}/opengraph-image`, width: 1200, height: 630, alt: "KayıpQR — Eşyan sana dönsün, numaran sende kalsın." }],
+    title: "KayıpQR — Ücretsiz Kayıp Eşya QR Etiketi",
     description:
-      "Eşyana QR etiketi ekle. Bulan kişi telefon numaranı görmeden sana mesaj göndersin. Etiketini ücretsiz oluştur, indir ve bastır.",
+      SITE_DESCRIPTION,
   },
   twitter: {
     card: "summary_large_image",
-    title: "KayıpQR — Eşyaların için QR etiket",
+    images: [`${SITE_URL}/opengraph-image`],
+    title: "KayıpQR — Ücretsiz Kayıp Eşya QR Etiketi",
     description:
-      "Eşyana QR etiketi ekle. Bulan kişi telefon numaranı görmeden sana mesaj göndersin. Etiketini ücretsiz oluştur, indir ve bastır.",
+      SITE_DESCRIPTION,
   },
   icons: {
     icon: [

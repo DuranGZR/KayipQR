@@ -25,6 +25,10 @@ const nextConfig = {
   },
   async headers() {
     return [
+      ...['login', 'register', 'forgot-password', 'reset-password', 'verify-email', 'auth', 'dashboard', 'messages', 'settings', 'studio', 'q'].map(route => ({
+        source: `/${route}/:path*`,
+        headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }],
+      })),
       {
         source: '/(.*)',
         headers: [

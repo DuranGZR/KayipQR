@@ -1,14 +1,11 @@
 import React from "react";
-import type { Metadata } from "next";
+import { publicMetadata } from "@/lib/seo";
 import Link from "next/link";
 import { QrCode, ArrowLeft, Shield, Scale, UserCheck, FileCheck } from "lucide-react";
 import { WobblyCardFrame, WobblyBoxFrame } from "@/components/ui/SketchBorders";
 import { Footer } from "@/components/landing/Footer";
 
-export const metadata: Metadata = {
-  title: "KVKK Aydınlatma Metni | KayıpQR",
-  description: "6698 Sayılı Kişisel Verilerin Korunması Kanunu kapsamında KayıpQR aydınlatma metni.",
-};
+export const metadata = publicMetadata("KVKK Aydınlatma Metni", "6698 Sayılı Kişisel Verilerin Korunması Kanunu kapsamında KayıpQR aydınlatma metni.", "/kvkk");
 
 export default function KvkkPage() {
   return (

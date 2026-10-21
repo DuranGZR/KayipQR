@@ -1,14 +1,8 @@
-import { MetadataRoute } from "next";
+import type { MetadataRoute } from "next";
+import { SITE_URL } from "@/lib/seo";
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "https://kayipqr.com";
-
-  return {
-    rules: {
-      userAgent: "*",
-      allow: ["/", "/login", "/register", "/privacy", "/terms", "/kvkk", "/cookies", "/q/"],
-      disallow: ["/dashboard/", "/messages/", "/settings/", "/studio/", "/api/", "/auth/", "/verify-email", "/reset-password"],
-    },
-    sitemap: `${baseUrl}/sitemap.xml`,
-  };
+  // Crawlers must reach private routes to read their noindex meta/header.
+  // Authentication, rather than robots.txt, protects account data.
+  return { rules: { userAgent: "*", allow: "/", disallow: "/api/" }, sitemap: `${SITE_URL}/sitemap.xml` };
 }

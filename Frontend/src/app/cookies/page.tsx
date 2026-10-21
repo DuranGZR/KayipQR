@@ -1,14 +1,11 @@
 import React from "react";
-import type { Metadata } from "next";
+import { publicMetadata } from "@/lib/seo";
 import Link from "next/link";
 import { QrCode, ArrowLeft, Cookie, Info, ToggleLeft } from "lucide-react";
 import { WobblyCardFrame, WobblyBoxFrame } from "@/components/ui/SketchBorders";
 import { Footer } from "@/components/landing/Footer";
 
-export const metadata: Metadata = {
-  title: "Çerez (Cookie) Politikası | KayıpQR",
-  description: "KayıpQR çerez kullanımı ve yerel depolama politikası.",
-};
+export const metadata = publicMetadata("Çerez (Cookie) Politikası", "KayıpQR çerez kullanımı ve yerel depolama politikası.", "/cookies");
 
 export default function CookiePolicyPage() {
   return (

@@ -59,6 +59,11 @@ export const Footer = () => {
                 </a>
               </li>
               <li>
+                <Link href="/rehber" className="hover:text-ink hover:underline">
+                  QR Etiket Rehberleri
+                </Link>
+              </li>
+              <li>
                 <Link href="/register" className="hover:text-ink hover:underline">
                   QR Tasarım Stüdyosu
                 </Link>

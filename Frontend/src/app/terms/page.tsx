@@ -1,14 +1,11 @@
 import React from "react";
-import type { Metadata } from "next";
+import { publicMetadata } from "@/lib/seo";
 import Link from "next/link";
 import { QrCode, ArrowLeft, FileText, CheckCircle2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { WobblyCardFrame, WobblyBoxFrame } from "@/components/ui/SketchBorders";
 import { Footer } from "@/components/landing/Footer";
 
-export const metadata: Metadata = {
-  title: "Kullanım Koşulları | KayıpQR",
-  description: "KayıpQR platformu kullanım koşulları, hizmet şartları ve kullanıcı sorumlulukları.",
-};
+export const metadata = publicMetadata("Kullanım Koşulları", "KayıpQR platformu kullanım koşulları, hizmet şartları ve kullanıcı sorumlulukları.", "/terms");
 
 export default function TermsOfServicePage() {
   return (

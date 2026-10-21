@@ -1,14 +1,11 @@
 import React from "react";
-import type { Metadata } from "next";
+import { publicMetadata } from "@/lib/seo";
 import Link from "next/link";
 import { QrCode, ArrowLeft, ShieldCheck, Lock, EyeOff, Server, UserCheck } from "lucide-react";
 import { WobblyCardFrame, WobblyBoxFrame } from "@/components/ui/SketchBorders";
 import { Footer } from "@/components/landing/Footer";
 
-export const metadata: Metadata = {
-  title: "Gizlilik Politikası | KayıpQR",
-  description: "KayıpQR anonim iletişim altyapısı, veri güvenliği ve gizlilik politikası.",
-};
+export const metadata = publicMetadata("Gizlilik Politikası", "KayıpQR anonim iletişim altyapısı, veri güvenliği ve gizlilik politikası.", "/privacy");
 
 export default function PrivacyPolicyPage() {
   return (
