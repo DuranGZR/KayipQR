@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
-// Keep the current public origin until a custom domain is actually connected.
-export const SITE_URL = new URL(process.env.NEXT_PUBLIC_APP_URL || "https://kayipqr-web.vercel.app").origin;
+// Deployments may override the public origin (for example, local SEO checks).
+export const SITE_URL = new URL(process.env.NEXT_PUBLIC_APP_URL || "https://kayipqr.com").origin;
 export const SITE_DESCRIPTION = "Eşyana QR etiketi ekle. Bulan kişi telefon numaranı görmeden sana mesaj göndersin. Etiketini ücretsiz oluştur, indir ve bastır.";
 
 export function publicMetadata(title: string, description: string, path: string): Metadata {
