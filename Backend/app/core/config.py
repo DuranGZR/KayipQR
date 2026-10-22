@@ -1,5 +1,5 @@
 from typing import List, Union, Literal
-from pydantic import field_validator, model_validator, Field
+from pydantic import AliasChoices, field_validator, model_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import json
 import os
@@ -28,7 +28,9 @@ class Settings(BaseSettings):
     RUN_MIGRATIONS: bool = False  # Railway uses a pre-deploy command instead.
 
     # URLs
-    PUBLIC_APP_URL: str = "http://localhost:3000"
+    # APP_PUBLIC_URL avoids Vercel's PUBLIC_ visibility restriction for legacy secrets.
+    PUBLIC_APP_URL: str = Field(default="http://localhost:3000",
+        validation_alias=AliasChoices("APP_PUBLIC_URL", "PUBLIC_APP_URL"))
     BACKEND_BASE_URL: str = "http://localhost:8000"
 
     # Storage

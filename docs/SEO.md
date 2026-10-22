@@ -26,7 +26,7 @@ Remove-Item Env:SEO_EXPECTED_ORIGIN
 
 - Ana frontend adresi `https://kayipqr.com`; `www.kayipqr.com` Vercel üzerinden 308 ile ana adrese yönlenir.
 - Turhost isim sunucuları `dns1.turhost.com` ve `dns2.turhost.com` olarak ayarlanmıştır. A (`@`) kaydı `216.198.79.1`, CNAME (`www`) hedefi `adc716e9502804c9.vercel-dns-017.com` olarak Vercel panelinden alınmıştır. Gelecekteki değişikliklerde panelin güncel önerisini kullanın.
-- Frontend Production `NEXT_PUBLIC_APP_URL` ve backend Production `PUBLIC_APP_URL`: `https://kayipqr.com`.
+- Frontend Production `NEXT_PUBLIC_APP_URL` ve backend Production `APP_PUBLIC_URL`: `https://kayipqr.com`. Backend eski `PUBLIC_APP_URL` ayarını da destekler; ikisi tanımlıysa `APP_PUBLIC_URL` önceliklidir. Yeni isim, Vercel'in eski `PUBLIC_` önekli secret değişkenlerini güncelleme kısıtını aşmak için kullanılır; uygulamada adres yine `settings.PUBLIC_APP_URL` üzerinden okunur.
 - Backend CORS: yeni ana adres, `https://www.kayipqr.com` ve mevcut `https://kayipqr-web.vercel.app`.
 - Backend `https://kayipqr-api.vercel.app` üzerinde kalır. Google OAuth yönlendirme URI'si `https://kayipqr-api.vercel.app/api/v1/auth/google/callback` olarak korunur.
 - Eski Vercel domaini erişilebilir kalır. Mevcut anonim sohbet anahtarları tarayıcıda origin'e bağlı saklandığından eski `/q/` bağlantılarını zorla başka origin'e yönlendirmeyin; kullanıcı geçmişine erişimi etkileyebilir. Yeni QR'lar ve e-posta bağlantıları yeni ana adresi kullanır; indekslenebilir sayfaların canonical adresleri yeni domaine işaret eder.
