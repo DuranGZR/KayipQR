@@ -21,6 +21,7 @@ import {
   svgPathDraw,
 } from "@/lib/animations";
 import { haptic } from "@/lib/haptics";
+import { SITE_URL } from "@/lib/seo";
 
 const showcaseBadges = ["Akışkan çizgiler", "Yaprak desenleri", "Dairesel tasarım", "Doğadan ilham alan", "KayıpQR klasiği", "Yatay çizgiler", "Noktalı tasarım", "Pul çerçevesi"];
 
@@ -188,7 +189,7 @@ export const HeroSection = () => {
                     className="flex flex-col items-center justify-center drop-shadow-[0_14px_28px_rgba(51,48,43,0.14)]"
                   >
                     <DynamicQrRenderer
-                      data="https://kayipqr.com/q/KQR"
+                      data={SITE_URL}
                       size={255}
                       designId={currentDesign.id}
                       dotColor={currentDesign.fgColor}
