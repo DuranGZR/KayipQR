@@ -1,4 +1,8 @@
 "use client";
+import { useOlderMessages } from "@/lib/useOlderMessages";
+import { mergeChatDetails } from "@/lib/api";
+import { OlderMessages } from "@/components/ui/OlderMessages";
+import { ChatImage } from "@/components/ui/ChatImage";
 
 import React, { useState, useEffect, useRef, Suspense, useCallback } from "react";
 import Link from "next/link";
@@ -96,6 +100,7 @@ function MessagesContent() {
   const [mobileView, setMobileView] = useState<"list" | "chat">(urlConvId ? "chat" : "list");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const older = useOlderMessages(activeConvDetails, setActiveConvDetails, cursor => chatApi.getOlderMessages(activeConvId!, cursor));
   const ownerFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const extractPhotoUrl = (text: string): string | null => {
@@ -162,17 +167,12 @@ function MessagesContent() {
       const details = await chatApi.getDetails(convId, showSpinner ? null : latestChat.current);
       if (activeIdRef.current !== convId) return;
       const hasNewMessages = details.messages.some(message => !latestChat.current?.messages.some(existing => existing.id === message.id));
-      setActiveConvDetails(previous => {
-        if (previous?.id !== details.id) return details;
-        const messages = new Map(previous.messages.map(message => [message.id, message]));
-        details.messages.forEach(message => messages.set(message.id, message));
-        return { ...details, messages: Array.from(messages.values()).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)) };
-      });
+      setActiveConvDetails(previous => showSpinner ? details : mergeChatDetails(previous, details));
       // Clear unread badge locally in list
       setConversations((prev) =>
         prev.map((c) => (c.id === convId ? { ...c, unread_count: 0 } : c))
       );
-      if (showSpinner || hasNewMessages) setTimeout(() => {
+      if (showSpinner || (hasNewMessages && (!older.container.current || older.container.current.scrollHeight - older.container.current.scrollTop - older.container.current.clientHeight < 120))) setTimeout(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 80);
     } catch (err) {
@@ -259,7 +259,8 @@ function MessagesContent() {
                 ws?.send(JSON.stringify({ type: "read_ack" }));
               }
               loadConversations(true);
-              setTimeout(() => {
+              const element = older.container.current;
+              if (!element || element.scrollHeight - element.scrollTop - element.clientHeight < 120) setTimeout(() => {
                 chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
               }, 80);
             } else if (data.type === "typing" && data.sender_type === "finder") {
@@ -848,7 +849,8 @@ function MessagesContent() {
                   </div>
                 )}
                 {/* Chat Bubble Messages Container */}
-                <div className="p-4 sm:p-5 overflow-y-auto flex-1 min-h-0 space-y-3">
+                <div ref={older.container} onScroll={older.onScroll} className="p-4 sm:p-5 overflow-y-auto flex-1 min-h-0 space-y-3">
+                  <OlderMessages hasMore={!!activeConvDetails?.next_cursor && !isLoadingDetails} {...older} />
                   {/* Privacy assurance pill at top of thread */}
                   <div className="text-center my-1">
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#EFE9DC] border border-ink/15 text-[10.5px] font-bold text-ink-soft">
@@ -905,7 +907,7 @@ function MessagesContent() {
                                 onClick={() => setPreviewImageModal(getMediaUrl(photoUrl))}
                                 className="mt-2 rounded-xl overflow-hidden border border-ink/20 relative group cursor-pointer"
                               >
-                                <img
+                                <ChatImage refresh={async () => { const refreshed = await chatApi.getMessage(activeConvDetails.id, msg.id); setActiveConvDetails(previous => previous?.id === refreshed.conversation_id ? { ...previous, messages: previous.messages.map(entry => entry.id === refreshed.id ? refreshed : entry) } : previous); }}
                                   src={getMediaUrl(photoUrl)}
                                   alt="Paylaşılan Fotoğraf"
                                   className="w-full max-h-52 object-cover rounded-xl"

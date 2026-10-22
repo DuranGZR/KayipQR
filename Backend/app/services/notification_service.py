@@ -8,6 +8,7 @@ from app.schemas.notification import NotificationResponse
 from app.services.email_service import email_service
 
 from app.services.outbox_service import queue_email
+from app.services.runtime_limits import consume_window
 
 
 class NotificationService:
@@ -35,6 +36,15 @@ class NotificationService:
         db.add(notif)
         if type_ == "qr_scanned":
             send_email = False
+
+        if send_email and user_email and type_ == "new_message":
+            # Share the quota across all items, IPs and serverless instances.
+            # Commit the reservation together with the notification and outbox row.
+            recipient = user_email.strip().lower()
+            cooldown = await consume_window(f"message-mail:cooldown:{recipient}", 1, 900, db=db)
+            send_email = not cooldown and not await consume_window(
+                f"message-mail:daily:{recipient}", 10, 86400, db=db
+            )
 
         if send_email and user_email:
             # Render tailored HTML body based on notification type

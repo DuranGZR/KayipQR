@@ -73,7 +73,7 @@ async def test_only_first_message_per_conversation_emails_but_scans_still_notify
         assert len(notifications) >= 5
         await ac.post("/api/v1/public/q/" + item["qr_code"]["unique_code"] + "/contact", json={"message": "Yeni konuşma"})
         async with AsyncSessionLocal() as db:
-            assert await db.scalar(select(func.count()).select_from(EmailOutbox).where(EmailOutbox.recipient == data["user"]["email"])) == 2
+            assert await db.scalar(select(func.count()).select_from(EmailOutbox).where(EmailOutbox.recipient == data["user"]["email"])) == 1
         preferences = await ac.put("/api/v1/auth/me", headers=headers, json={"email_on_scan": True, "email_on_message": False})
         assert preferences.json()["email_on_scan"] is False
 

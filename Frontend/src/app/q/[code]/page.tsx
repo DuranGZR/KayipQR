@@ -1,4 +1,8 @@
 "use client";
+import { useOlderMessages } from "@/lib/useOlderMessages";
+import { mergeChatDetails } from "@/lib/api";
+import { OlderMessages } from "@/components/ui/OlderMessages";
+import { ChatImage } from "@/components/ui/ChatImage";
 import { startVisiblePolling } from "@/lib/visiblePolling";
 import { CHAT_WEBSOCKETS_ENABLED } from "@/lib/api";
 
@@ -53,7 +57,7 @@ const I18N = {
     owner_label: "Sahip",
     category_label: "Kategori",
     owner_note_title: "Sahibinin Notu",
-    finder_prompt: "Numaranız ve kimliğiniz 100% gizli kalır.",
+    finder_prompt: "Telefon numaranız otomatik paylaşılmaz. Mesaja yazdığınız bilgiler eşya sahibine görünür.",
     quick_chips_title: "Hızlı Mesajlar:",
     chips: [
       "📍 Eşyayı buldum, güvende.",
@@ -72,7 +76,7 @@ const I18N = {
     location_gps_btn: "GPS Ekle",
     location_gps_active: "GPS Eklendi ✓",
     location_manual_placeholder: "Veya yer notu yazın (Örn: Danışma)",
-    privacy_badge: "Numaranız veya kimliğiniz asla gösterilmez.",
+    privacy_badge: "Telefon numaranız otomatik paylaşılmaz; mesajınızda paylaştığınız bilgiler karşı tarafa görünür.",
     safety_title: "Güvenlik Tavsiyesi",
     safety_desc: "Eşyayı teslim ederken metro, AVM veya kafe gibi kalabalık kamu alanlarını tercih edin.",
     btn_submit: "Sahibine Güvenle Gönder",
@@ -99,7 +103,7 @@ const I18N = {
     owner_label: "Owner",
     category_label: "Category",
     owner_note_title: "Owner's Note",
-    finder_prompt: "Your phone number and identity are 100% private.",
+    finder_prompt: "Your phone number is not shared automatically. Information you write in your message is visible to the owner.",
     quick_chips_title: "Quick messages:",
     chips: [
       "📍 Found your item, it is safe.",
@@ -118,7 +122,7 @@ const I18N = {
     location_gps_btn: "Add GPS",
     location_gps_active: "GPS Added ✓",
     location_manual_placeholder: "Or write location note (e.g. Info desk)",
-    privacy_badge: "Your personal details remain completely hidden.",
+    privacy_badge: "Your phone number is not shared automatically; information you share in your message is visible to the owner.",
     safety_title: "Safety Tip",
     safety_desc: "Prefer crowded public spaces (malls, cafes, stations) for handover. Never share private home addresses.",
     btn_submit: "Send Safely to Owner",
@@ -182,6 +186,8 @@ export default function PublicFinderPage() {
   const [isWsConnected, setIsWsConnected] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const older = useOlderMessages(conversation, setConversation, cursor => publicApi.getOlderFinderMessages(sessionToken!, cursor));
+  const atBottom = useRef(true);
   const wsRef = useRef<WebSocket | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -231,12 +237,7 @@ export default function PublicFinderPage() {
       latestSession.current = token;
       const convData = await publicApi.getFinderConversation(token, previous);
       if (latestSession.current !== token) return;
-      setConversation(previous => {
-        if (previous?.id !== convData.id) return convData;
-        const messages = new Map(previous.messages.map(message => [message.id, message]));
-        convData.messages.forEach(message => messages.set(message.id, message));
-        return { ...convData, messages: Array.from(messages.values()).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)) };
-      });
+      setConversation(previous => mergeChatDetails(previous, convData));
     } catch (err) {
       console.error("Finder chat load error:", err);
       if ((err as { status?: number }).status !== 404) return;
@@ -366,8 +367,8 @@ export default function PublicFinderPage() {
 
   // Scroll to bottom when messages update
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [conversation?.id, conversation?.messages.length, ownerIsTyping]);
+    if (atBottom.current) chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conversation?.id, conversation?.messages[conversation.messages.length - 1]?.id, ownerIsTyping]);
 
   const handleReplyInputChange = (val: string) => {
     setReplyText(val);
@@ -714,7 +715,8 @@ export default function PublicFinderPage() {
             )}
 
             {/* Scrollable Messages Area */}
-            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3">
+            <div ref={older.container} onScroll={() => { const element = older.container.current; if (element) atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 120; older.onScroll(); }} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-3">
+              <OlderMessages hasMore={!!conversation?.next_cursor} english={lang === "en"} {...older} />
               {conversation?.messages && conversation.messages.length > 0 ? (
                 conversation.messages.map((msg) => {
                   const isFinder = msg.sender_type === "finder";
@@ -753,7 +755,7 @@ export default function PublicFinderPage() {
                             className="mt-1.5 rounded-lg overflow-hidden border border-ink/20 relative group cursor-pointer"
                             onClick={() => setPreviewImageModal(getMediaUrl(photoUrl))}
                           >
-                            <img
+                            <ChatImage refresh={async () => { const refreshed = await publicApi.getFinderMessage(sessionToken!, msg.id); setConversation(previous => previous?.id === refreshed.conversation_id ? { ...previous, messages: previous.messages.map(entry => entry.id === refreshed.id ? refreshed : entry) } : previous); }}
                               src={getMediaUrl(photoUrl)}
                               alt="Shared"
                               className="w-full max-h-36 object-cover rounded-lg"

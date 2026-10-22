@@ -111,7 +111,7 @@ export default function PrivacyPolicyPage() {
                       Toplanan veriler yalnızca şu amaçlarla işlenir:
                     </p>
                     <ul className="list-disc pl-5 space-y-1">
-                      <li>QR taramaları ve mesajlar için site içi bildirim oluşturmak. Tercihiniz açıksa her yeni konuşmanın yalnızca ilk mesajında e-posta göndermek; QR taramalarında ve sonraki mesajlarda e-posta göndermemek.</li>
+                      <li>QR taramaları ve mesajlar için site içi bildirim oluşturmak. Tercihiniz açıksa yeni konuşmaların yalnızca ilk mesajı için, aynı adrese 15 dakikada en fazla 1 ve 24 saatte en fazla 10 bildirim e-postası göndermek; QR taramalarında ve sonraki mesajlarda e-posta göndermemek.</li>
                       <li>Yeni hesabın e-posta adresini doğrulamak ve talebiniz üzerine şifre sıfırlama bağlantısı göndermek. Şifre sıfırlama talepleri aynı adres için 60 saniyede bir e-posta ile sınırlıdır.</li>
                       <li>Bulan kişi ile aranızda güvenli ve anonim sohbet oturumu sağlamak.</li>
                       <li>QR kod tarama istatistiklerini ve güvenlik loglarını yönetmek.</li>

@@ -404,8 +404,6 @@ async function fetchListPages<T extends { id: string }>(path: string, errorMessa
 }
 
 async function fetchConversationHistory(path: string, authenticated: boolean, previous?: ConversationDetailData | null): Promise<ConversationDetailData> {
-  // Refresh expiring image capabilities occasionally, rather than every polling round.
-  if (previous?.messages.some(message => Array.from(message.content.matchAll(/[?&]expires=(\d+)/g)).some(match => Number(match[1]) * 1000 < Date.now() + 60000))) previous = null;
   const incremental = !!previous?.messages.length;
   let first: ConversationDetailData | undefined;
   const pages: MessageData[][] = [];
@@ -426,14 +424,30 @@ async function fetchConversationHistory(path: string, authenticated: boolean, pr
     cursor = page.next_cursor;
     if (cursor && visited.has(cursor)) throw new Error("Sohbet sayfalaması tamamlanamadı.");
     if (cursor) visited.add(cursor);
-  } while (cursor);
-  const incoming = (incremental ? pages : pages.reverse()).flat();
+  } while (incremental && cursor);
+  const incoming = pages.flat();
   const byId = new Map((incremental ? previous!.messages : []).map(message => [message.id, message]));
   incoming.forEach(message => byId.set(message.id, message));
   const ownSender = authenticated ? "owner" : "finder";
   const messages = Array.from(byId.values()).map(message => first?.read_through && message.sender_type === ownSender &&
     new Date(message.created_at).getTime() <= new Date(first.read_through).getTime() ? { ...message, is_read: true } : message);
-  return { ...first!, messages, next_cursor: null };
+  return { ...first!, messages, next_cursor: incremental ? previous!.next_cursor : first!.next_cursor };
+}
+
+// Preserve an older-history cursor when a polling response races an older-page request.
+export function mergeChatDetails(previous: ConversationDetailData | null, incoming: ConversationDetailData, older = false): ConversationDetailData {
+  if (!previous || previous.id !== incoming.id) return incoming;
+  const messages = new Map(previous.messages.map(message => [message.id, message]));
+  incoming.messages.forEach(message => messages.set(message.id, older && messages.has(message.id) ? messages.get(message.id)! : message));
+  return { ...(older ? previous : incoming), next_cursor: older ? incoming.next_cursor : previous.next_cursor,
+    messages: Array.from(messages.values()).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id)) };
+}
+
+async function fetchChatPage<T>(path: string, authenticated: boolean): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, authenticated ? { headers: getHeaders() } : {});
+  if (authenticated) handleAuthFailureIfNeeded(response);
+  if (!response.ok) throw new Error("Mesajlar yüklenemedi. Tekrar deneyin.");
+  return response.json();
 }
 
 export const itemsApi = {
@@ -586,6 +600,9 @@ export const chatApi = {
   getDetails: async (conversationId: string, previous?: ConversationDetailData | null): Promise<ConversationDetailData> => {
     return fetchConversationHistory(`/conversations/${conversationId}`, true, previous?.id === conversationId ? previous : null);
   },
+
+  getOlderMessages: (id: string, before: string) => fetchChatPage<ConversationDetailData>(`/conversations/${id}?limit=100&before=${encodeURIComponent(before)}`, true),
+  getMessage: (id: string, messageId: string) => fetchChatPage<MessageData>(`/conversations/${id}/messages/${messageId}`, true),
 
   sendMessage: async (
     conversationId: string,
@@ -741,6 +758,9 @@ export const publicApi = {
   getFinderConversation: async (sessionToken: string, previous?: ConversationDetailData | null): Promise<ConversationDetailData> => {
     return fetchConversationHistory(`/conversations/finder/${encodeURIComponent(sessionToken)}`, false, previous);
   },
+
+  getOlderFinderMessages: (token: string, before: string) => fetchChatPage<ConversationDetailData>(`/conversations/finder/${encodeURIComponent(token)}?limit=100&before=${encodeURIComponent(before)}`, false),
+  getFinderMessage: (token: string, messageId: string) => fetchChatPage<MessageData>(`/conversations/finder/${encodeURIComponent(token)}/messages/${messageId}`, false),
 
   sendFinderMessage: async (
     sessionToken: string,

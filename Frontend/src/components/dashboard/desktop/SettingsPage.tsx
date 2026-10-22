@@ -335,7 +335,7 @@ export default function SettingsPage() {
                         <label htmlFor="emailOnMessage" className="text-xs leading-relaxed cursor-pointer">
                           <strong className="block text-ink font-bold">Yeni Konuşmanın İlk Mesajı</strong>
                           <span className="text-ink-soft text-[11px]">
-                            Her yeni konuşmada yalnızca ilk mesaj için e-posta alın. QR taramalarında ve sonraki mesajlarda e-posta gönderilmez.
+                            Yeni konuşmaların ilk mesajları için e-posta alın. Aynı adrese 15 dakikada en fazla 1, 24 saatte en fazla 10 bildirim e-postası gönderilir. Tüm mesajlar sitede görünür; QR taramalarında ve sonraki mesajlarda e-posta gönderilmez.
                           </span>
                         </label>
                       </div>
@@ -485,7 +485,7 @@ export default function SettingsPage() {
                     <span>Gizlilik & Güvenlik Garantisi</span>
                   </div>
                   <p className="text-[11.5px] text-ink-soft leading-relaxed">
-                    KayıpQR üzerinde oluşturduğunuz hiçbir QR kodda telefon numaranız, e-postanız veya gerçek kimliğiniz saklanmaz. Tüm iletişim çift taraflı şifreli anonim katmanda gerçekleşir.
+                    Hesap telefonunuz ve e-postanız karşı tarafa otomatik gösterilmez. Görünmesini seçtiğiniz sahip adı ve eşya bilgileri ile mesajlarda paylaştığınız bilgiler karşı tarafa görünür. Bağlantı HTTPS ile korunur; mesajlaşma uçtan uca şifreli değildir.
                   </p>
                 </div>
               </div>

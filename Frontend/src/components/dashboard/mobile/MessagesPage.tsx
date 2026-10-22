@@ -1,4 +1,8 @@
 "use client";
+import { useOlderMessages } from "@/lib/useOlderMessages";
+import { mergeChatDetails } from "@/lib/api";
+import { OlderMessages } from "@/components/ui/OlderMessages";
+import { ChatImage } from "@/components/ui/ChatImage";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -49,7 +53,8 @@ function MessagesContent() {
   activeRef.current = activeId;
   const typingTimer = useRef<ReturnType<typeof setTimeout>>();
   const typingSentAt = useRef(0);
-  const history = useRef<HTMLDivElement>(null);
+  const older = useOlderMessages(details, setDetails, cursor => chatApi.getOlderMessages(activeId!, cursor));
+  const history = older.container;
   const atBottom = useRef(true);
   const photoInput = useRef<HTMLInputElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -88,12 +93,7 @@ function MessagesContent() {
       const next = await chatApi.getDetails(id, initial ? null : latestChat.current);
       if (activeRef.current !== id) return;
       const hasNewMessages = next.messages.some(message => !latestChat.current?.messages.some(existing => existing.id === message.id));
-      setDetails(previous => {
-        if (previous?.id !== next.id) return next;
-        const byId = new Map(previous.messages.map(message => [message.id, message]));
-        next.messages.forEach(message => byId.set(message.id, message));
-        return { ...next, messages: Array.from(byId.values()).sort((a, b) => a.created_at.localeCompare(b.created_at)) };
-      }); setChatError("");
+      setDetails(previous => initial ? next : mergeChatDetails(previous, next)); setChatError("");
       setList(previous => previous.map(item => item.id === id ? { ...item, unread_count: 0 } : item));
       if (initial) scrollBottom(true); else if (hasNewMessages) scrollBottom();
     } catch (error) { if (activeRef.current === id) setChatError((error as Error).message); }
@@ -189,7 +189,7 @@ function MessagesContent() {
     return <div key={message.id} className={`flex mb-3 ${own ? "justify-end" : "justify-start"}`}>
       <div className={`max-w-[86%] md:max-w-[75%] px-4 py-3 rounded-[20px] text-[15px] leading-relaxed break-words ${own ? "bg-[#F4CB70] rounded-br-md" : "bg-white border border-ink/10 rounded-bl-md"}`}>
         {media.text && <p className="whitespace-pre-wrap">{media.text}</p>}
-        {media.image && <button onClick={() => setPreview(getMediaUrl(media.image))} className="block mt-1" aria-label="Fotoğrafı büyüt"><img src={getMediaUrl(media.image)} alt="Paylaşılan eşya fotoğrafı" className="rounded-xl max-h-56 object-cover" onLoad={() => scrollBottom()} /></button>}
+        {media.image && <button onClick={() => setPreview(getMediaUrl(media.image))} className="block mt-1" aria-label="Fotoğrafı büyüt"><ChatImage refresh={async () => { const refreshed = await chatApi.getMessage(details!.id, message.id); setDetails(previous => previous?.id === refreshed.conversation_id ? { ...previous, messages: previous.messages.map(entry => entry.id === refreshed.id ? refreshed : entry) } : previous); }} src={getMediaUrl(media.image)} alt="Paylaşılan eşya fotoğrafı" className="rounded-xl max-h-56 object-cover" onLoad={() => { if (atBottom.current) scrollBottom(); }} /></button>}
         {message.location_lat != null && message.location_lng != null && <a className="flex items-center gap-2 rounded-xl bg-white/60 p-3 mt-2 font-bold text-sm" href={`https://maps.google.com/?q=${message.location_lat},${message.location_lng}`} target="_blank" rel="noreferrer"><MapPin size={18} /><span>{message.location_address || "Paylaşılan konum"}</span><ExternalLink size={15} /></a>}
         {message.location_address && message.location_lat == null && <p className="flex gap-2 mt-2 text-sm"><MapPin size={17} className="shrink-0" />{message.location_address}</p>}
         <div className="flex justify-end items-center gap-1 mt-1 text-[11px] text-ink/60"><time>{time(message.created_at)}</time>{own && (message.is_read ? <CheckCheck size={15} aria-label="Okundu" className="text-[#1E7E75]" /> : <Check size={14} aria-label="İletildi" />)}</div>
@@ -223,10 +223,11 @@ function MessagesContent() {
             </header>
             {details?.status === "resolved" && <div className="px-5 py-3 bg-[#e5eee4] text-[#28654b] text-sm flex gap-2"><CheckCheck size={18} />Eşya teslim alındı. Teşekkürler!</div>}
             {closed && <div className="px-5 py-3 bg-gold/15 text-sm">Bu konuşma {details?.status === "blocked" ? "engellendi" : "kapatıldı"}. <button className="underline font-bold" onClick={() => changeStatus("active")}>Yeniden aç</button></div>}
-            <div ref={history} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6" onScroll={() => { const element = history.current; if (element) { atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; if (atBottom.current) setNewBelow(false); } }}>
+            <div ref={history} className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 md:p-6" onScroll={() => { const element = history.current; if (element) { atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 100; if (atBottom.current) setNewBelow(false); } older.onScroll(); }}>
               <p className="flex justify-center gap-1.5 text-[11px] text-ink-soft mb-6"><ShieldCheck size={14} />Telefonun ve e-postan karşı tarafa gösterilmez.</p>
               {loadingChat && <p role="status" className="text-center py-10 text-sm">Mesajlar yükleniyor…</p>}
               {chatError && <div role="alert" className="app-error">{chatError}<button className="underline block mt-2" onClick={() => loadDetails(activeId, true)}>Yeniden dene</button></div>}
+              <OlderMessages hasMore={!!details?.next_cursor} {...older} />
               {details?.messages.map(renderMessage)}
               {typing && <p className="text-xs text-ink-soft py-2">Bulan kişi yazıyor…</p>}
             </div>

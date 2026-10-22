@@ -20,6 +20,35 @@ from app.services.item_service import item_service
 router = APIRouter()
 
 
+async def message_response(db: AsyncSession, conversation_id: str, message_id: str) -> MessageResponse:
+    message = await db.scalar(select(Message).where(
+        Message.conversation_id == conversation_id, Message.id == message_id
+    ))
+    if message is None:
+        raise HTTPException(status_code=404, detail="Mesaj bulunamadı.")
+    return MessageResponse.model_validate(message)
+
+
+@router.get("/{conversation_id}/messages/{message_id}", response_model=MessageResponse)
+async def get_owner_message(conversation_id: str, message_id: str,
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Refresh one message's media capability without loading the history."""
+    conv = await chat_service.get_conversation_by_id(db, conversation_id, include_messages=False)
+    if not conv or not conv.item or conv.item.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Konuşma bulunamadı.")
+    return await message_response(db, conv.id, message_id)
+
+
+@router.get("/finder/{session_token}/messages/{message_id}", response_model=MessageResponse)
+async def get_finder_message(session_token: str, message_id: str, request: Request,
+    db: AsyncSession = Depends(get_db)):
+    await rate_limiter.check_rate_limit(request, max_requests=60, window_seconds=60, key_prefix="finder_message")
+    conv = await chat_service.get_conversation_by_token(db, session_token, include_messages=False)
+    if not conv:
+        raise HTTPException(status_code=404, detail="Konuşma oturumu bulunamadı.")
+    return await message_response(db, conv.id, message_id)
+
+
 # ==============================================================================
 # Eşya Sahibi (Owner) Endpoint'leri
 # ==============================================================================
