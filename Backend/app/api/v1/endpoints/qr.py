@@ -1,3 +1,4 @@
+from app.core.qr_policy import validate_qr_colors
 import asyncio
 import io
 import json
@@ -27,6 +28,7 @@ router = APIRouter()
 def _render_qr_png_sync(qr_url: str, design: dict) -> bytes:
     fg = design.get("fg_color") or design.get("color_dark") or "#1B4DF5"
     bg = design.get("bg_color") or design.get("color_light") or "#FFFFFF"
+    validate_qr_colors(fg, bg)
     dot_style = design.get("dot_style") or design.get("pattern_style") or "rounded"
 
     drawer = RoundedModuleDrawer()

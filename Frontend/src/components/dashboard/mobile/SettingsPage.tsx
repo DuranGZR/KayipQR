@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useResponsiveState } from "@/lib/responsiveState";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowUpRight, Bell, ChevronRight, Eye, EyeOff, KeyRound, Loader2, LogOut, ShieldCheck, Trash2, UserRound, X, Check } from "lucide-react";
 import { Sidebar } from "@/components/dashboard/Sidebar";
@@ -11,17 +13,17 @@ type Section = "profile" | "notifications" | "password" | "account" | null;
 const sectionNames = { profile: "Profil bilgileri", notifications: "Bildirim tercihleri", password: "Şifre değiştir", account: "Hesap işlemleri" };
 export default function SettingsPage() {
   const router = useRouter(); const toast = useToast();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useResponsiveState<User | null>("settings:user", null);
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState<Section>(null);
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [onMessage, setOnMessage] = useState(true);
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [password, setPassword] = useState("");
-  const [repeat, setRepeat] = useState("");
+  const [section, setSection] = useResponsiveState<Section>("settings:section", null);
+  const [name, setName] = useResponsiveState("settings:name", "");
+  const [phone, setPhone] = useResponsiveState("settings:phone", "");
+  const [onMessage, setOnMessage] = useResponsiveState("settings:mail", true);
+  const [currentPassword, setCurrentPassword] = useResponsiveState("settings:current", "");
+  const [password, setPassword] = useResponsiveState("settings:password", "");
+  const [repeat, setRepeat] = useResponsiveState("settings:repeat", "");
   const [showPassword, setShowPassword] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useResponsiveState("settings:busy", false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadError, setLoadError] = useState("");
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -30,21 +32,24 @@ export default function SettingsPage() {
   const [permission, setPermission] = useState("unsupported");
   const operationLock = useRef(false);
   const dirty = !!user && (name !== (user.full_name || "") || phone !== (user.phone_number || "") || onMessage !== (user.email_on_message ?? true) || !!currentPassword || !!password || !!repeat);
+  const leaveDialog = useUnsavedChanges(dirty);
+  const [discardTarget, setDiscardTarget] = useState<{ section: Section } | null>(null);
   const reset = (next: User) => { setName(next.full_name || ""); setPhone(next.phone_number || ""); setOnMessage(next.email_on_message ?? true); setCurrentPassword(""); setPassword(""); setRepeat(""); setErrors({}); };
   const load = async () => {
     if (!getAuthToken()) { router.replace("/login"); return; }
     setLoading(true); setLoadError("");
-    try { const next = await authApi.getMe(); setUser(next); reset(next); }
+    try { const next = await authApi.getMe(); if (!user) reset(next); setUser(next); }
     catch (cause) { setLoadError((cause as Error).message); if (!getAuthToken()) router.replace("/login"); }
     finally { setLoading(false); }
   };
   useEffect(() => { load(); if ("Notification" in window) setPermission(Notification.permission); }, []);
   const navigate = (next: Section) => {
     if (busy) return;
+    if (dirty) { setDiscardTarget({ section: next }); return; }
     if (user) reset(user); setSection(next); window.scrollTo({ top: 0 });
   };
   const save = async () => {
-    if (!user || operationLock.current) return;
+    if (!user || operationLock.current || busy) return;
     const nextErrors: Record<string, string> = {};
     if (section === "profile" && name.length > 255) nextErrors.name = "Adın en fazla 255 karakter olabilir.";
     if (section === "profile" && phone && !/^[+\d\s()\-]{7,50}$/.test(phone)) nextErrors.phone = "Geçerli bir telefon numarası yaz.";
@@ -88,15 +93,22 @@ export default function SettingsPage() {
           <div><label className="app-label" htmlFor="email">E-posta adresin</label><input id="email" type="email" className="app-input" value={user.email} disabled /><p className="text-xs text-ink-soft mt-2">E-posta adresi bu ekrandan değiştirilemez.</p></div>
         </form>}
         {section === "notifications" && <div className="space-y-5"><section className="app-card"><h2 className="font-extrabold text-lg mb-2">E-posta bildirimleri</h2><p className="text-sm text-ink-soft mb-5">Önemli anlardan haberdar ol.</p>{[{ label: "Yeni konuşmanın ilk mesajı", hint: "Yeni konuşmaların ilk mesajları için e-posta al. Aynı adrese 15 dakikada en fazla 1, 24 saatte en fazla 10 bildirim e-postası gönderilir. Tüm mesajlar sitede görünür; QR taramalarında ve sonraki mesajlarda e-posta gönderilmez.", value: onMessage, set: setOnMessage }].map(entry => <label key={entry.label} className="flex justify-between gap-5 items-center py-5 border-t border-ink/10 cursor-pointer"><span><strong className="block text-sm">{entry.label}</strong><span className="block text-xs text-ink-soft leading-relaxed mt-1">{entry.hint}</span></span><input type="checkbox" className="app-switch" checked={entry.value} onChange={event => entry.set(event.target.checked)} /></label>)}</section>
-          <section className="app-card"><h2 className="font-bold mb-2">Tarayıcı uyarıları</h2><p className="text-sm leading-relaxed text-ink-soft mb-4">Site açıkken yeni bildirimleri ekranında gösterir. Site kapalıyken e-posta tercihlerin geçerlidir.</p><button className="app-button w-full" disabled={permission === "granted" || permission === "unsupported"} onClick={async () => { try { setPermission(await Notification.requestPermission()); } catch { toast.error("Tarayıcı izni alınamadı."); } }}>{permission === "granted" ? "Bildirim izni açık ✓" : permission === "unsupported" ? "Bu tarayıcı desteklemiyor" : permission === "denied" ? "Tarayıcı ayarlarından izin ver" : "Tarayıcı bildirimlerini aç"}</button>{permission === "denied" && <p className="text-xs text-ink-soft leading-relaxed mt-3">Adres çubuğundaki site ayarlarından bildirim iznini değiştirebilirsin.</p>}</section>
+          <section className="app-card"><h2 className="font-bold mb-2">Tarayıcı uyarıları</h2><p className="text-sm leading-relaxed text-ink-soft mb-4">Site açık ve görünürken bildirimleri yaklaşık dakikada bir kontrol ederiz. Site kapalıyken ilk mesaj e-postası tercihin geçerlidir.</p><button className="app-button w-full" disabled={permission === "granted" || permission === "unsupported"} onClick={async () => { try { setPermission(await Notification.requestPermission()); } catch { toast.error("Tarayıcı izni alınamadı."); } }}>{permission === "granted" ? "Bildirim izni açık ✓" : permission === "unsupported" ? "Bu tarayıcı desteklemiyor" : permission === "denied" ? "Tarayıcı ayarlarından izin ver" : "Tarayıcı bildirimlerini aç"}</button>{permission === "denied" && <p className="text-xs text-ink-soft leading-relaxed mt-3">Adres çubuğundaki site ayarlarından bildirim iznini değiştirebilirsin.</p>}</section>
         </div>}
         {section === "password" && user.has_password === false && <p className="app-card text-sm leading-relaxed">Google ile giriş yapıyorsun. E-posta ile giriş için <a className="underline" href="/forgot-password">şifre belirleme bağlantısı isteyebilirsin</a>.</p>}
         {section === "password" && user.has_password !== false && <form id="settings-form" className="app-card space-y-5" onSubmit={event => { event.preventDefault(); save(); }}><p className="text-sm leading-relaxed text-ink-soft">Tahmin edilmesi zor, başka bir yerde kullanmadığın bir şifre seç.</p>{[{ id: "current", label: "Mevcut şifren", value: currentPassword, set: setCurrentPassword, auto: "current-password" }, { id: "password", label: "Yeni şifren", value: password, set: setPassword, auto: "new-password" }, { id: "repeat", label: "Yeni şifreni tekrar yaz", value: repeat, set: setRepeat, auto: "new-password" }].map(field => <div key={field.id}><label className="app-label" htmlFor={field.id}>{field.label}</label><input id={field.id} type={showPassword ? "text" : "password"} autoComplete={field.auto} className="app-input" required maxLength={128} value={field.value} aria-invalid={!!errors[field.id]} onChange={event => field.set(event.target.value)} />{fieldError(field.id)}</div>)}<button type="button" className="app-button w-full" onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}{showPassword ? "Şifreleri gizle" : "Şifreleri göster"}</button></form>}
         {section === "account" && <div className="space-y-5"><section className="app-card"><h2 className="font-extrabold text-lg">Oturumun</h2><p className="text-sm text-ink-soft mt-2 mb-5">Bu cihazdaki hesabından güvenle çıkış yap.</p><button className="app-button w-full" onClick={() => setLogoutOpen(true)}><LogOut size={18} />Çıkış yap</button></section><section className="app-card !border-rose-200"><h2 className="font-extrabold text-lg text-rose-800">Hesabını sil</h2><p className="text-sm text-ink-soft leading-relaxed mt-2 mb-5">Hesabınla birlikte eşyaların, QR kodların ve konuşmaların kalıcı olarak silinir. Basılı etiketlerin artık çalışmaz.</p><button className="app-button w-full text-rose-700 !border-rose-200" onClick={() => setDeleteOpen(true)}><Trash2 size={18} />Hesabımı sil</button></section></div>}
         {errors.form && <p role="alert" className="app-error mt-5">{errors.form}</p>}
-        {editable && <><button className="app-button app-button-primary w-full mt-6 hidden md:flex" disabled={!dirty || busy} onClick={save}>{busy ? "Kaydediliyor…" : "Değişiklikleri kaydet"}</button><div className="app-mobile-action"><button className="app-button flex-1 app-button-primary" disabled={!dirty || busy} onClick={save}>{busy ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}{busy ? "Kaydediliyor…" : dirty ? "Değişiklikleri kaydet" : "Tüm değişiklikler kaydedildi"}</button></div></>}
+        {editable && <><button className="app-button app-button-primary w-full mt-6 hidden md:flex" disabled={!dirty || busy} onClick={save}>{busy ? "Kaydediliyor…" : "Değişiklikleri kaydet"}</button><div className="app-mobile-action"><button className="app-button flex-1 app-button-primary" disabled={!dirty || busy} onClick={save}>{busy ? <Loader2 size={18} className="animate-spin" /> : <Check size={18} />}{busy ? "Kaydediliyor…" : dirty ? "Değişiklikleri kaydet" : "Değişiklik yok"}</button></div></>}
       </div>}
+    <a className="block text-center text-sm underline my-6" href="mailto:contact@durangezer.com">Destek: contact@durangezer.com</a>
     </main>
+    {leaveDialog}
+    <Sheet open={!!discardTarget} onClose={() => setDiscardTarget(null)} title="Değişikliklerden vazgeçilsin mi?">
+      <p className="text-sm mb-5">Yazdıkların henüz kaydedilmedi.</p>
+      <button className="app-button w-full mb-3" onClick={() => setDiscardTarget(null)}>Düzenlemeye devam et</button>
+      <button className="app-button w-full" onClick={() => { if (user) reset(user); setSection(discardTarget?.section ?? null); setDiscardTarget(null); }}>Değişikliklerden vazgeç</button>
+    </Sheet>
     <Sheet open={deleteOpen} onClose={() => !busy && setDeleteOpen(false)} title="Hesabını kalıcı olarak sil?"><p className="text-sm leading-relaxed text-ink-soft mb-5">Bu işlem geri alınamaz. Devam etmek için aşağıya <strong>hesabımı sil</strong> yaz.</p><label className="app-label" htmlFor="delete-confirm">Onay metni</label><input id="delete-confirm" className="app-input mb-4" autoComplete="off" value={deleteText} onChange={event => setDeleteText(event.target.value)} /><button className="app-button app-button-danger w-full text-white" disabled={busy || deleteText.trim().toLocaleLowerCase("tr-TR") !== "hesabımı sil"} onClick={async () => {
       if (operationLock.current) return; operationLock.current = true; setBusy(true);
       try { await authApi.deleteAccount(); clearAuthTokens(); router.replace("/"); } catch (cause) { toast.error((cause as Error).message); } finally { setBusy(false); operationLock.current = false; }

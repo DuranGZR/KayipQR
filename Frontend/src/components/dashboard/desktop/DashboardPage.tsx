@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Suspense } from "react";
+import { usePagedList } from "@/lib/usePagedList";
+import { qrColorError } from "@/lib/qrPolicy";
+import { useDialog } from "@/lib/useDialog";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -83,59 +86,35 @@ function DashboardContent() {
   const searchParams = useSearchParams();
   const queryItemId = searchParams?.get("item");
   const toast = useToast();
-  const [items, setItems] = useState<ItemData[]>([]);
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+
   const [filter, setFilter] = useState<"all" | "safe" | "lost" | "resolved">("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const page = usePagedList(`${filter}:${searchQuery}`, offset => itemsApi.list(filter, searchQuery, offset));
+  const { items, setItems, loading: isLoading, error } = page;
   const [selectedDownloadItem, setSelectedDownloadItem] = useState<ItemData | null>(null);
   const [selectedDetailItem, setSelectedDetailItem] = useState<ItemData | null>(null);
   const [celebrationItem, setCelebrationItem] = useState<ItemData | null>(null);
   const [downloadPreset, setDownloadPreset] = useState<"mix" | "standard" | "nano" | "luggage" | "round">("mix");
   const [showModalA4Options, setShowModalA4Options] = useState(false);
   const [isDownloadingA4, setIsDownloadingA4] = useState(false);
+  const [permissionDismissed, setPermissionDismissed] = useState(true);
   const [pushPermission, setPushPermission] = useState<string>("default");
   const [itemScans, setItemScans] = useState<QRScanData[]>([]);
+  const [scansError, setScansError] = useState("");
   const [isLoadingScans, setIsLoadingScans] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
   const [isTogglingActive, setIsTogglingActive] = useState(false);
 
+  const detailDialog = useDialog(!!selectedDetailItem, () => setSelectedDetailItem(null));
+  const exportDialog = useDialog(!!selectedDownloadItem, () => setSelectedDownloadItem(null));
+  const celebrationDialog = useDialog(!!celebrationItem, () => setCelebrationItem(null));
   const modalQrRef = useRef<any>(null);
   const modalStickerCardRef = useRef<HTMLDivElement>(null);
 
-  const loadData = async () => {
-    setIsLoading(true);
-    try {
-      const token = getAuthToken();
-      if (!token) {
-        router.push("/login");
-        return;
-      }
-
-      const [userItems, userStats] = await Promise.all([
-        itemsApi.list(),
-        itemsApi.getStats(),
-      ]);
-
-      setItems(userItems);
-      setStats(userStats);
-    } catch (err: any) {
-      console.error("Failed to load dashboard data:", err);
-      if (err.message?.includes("Oturum") || err.message?.includes("token") || err.message?.includes("401")) {
-        clearAuthTokens();
-        router.push("/login");
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-    if (typeof window !== "undefined" && "Notification" in window) {
-      setPushPermission(Notification.permission);
-    }
-  }, []);
+  const loadData = async () => { await page.refresh(); try { setStats(await itemsApi.getStats()); } catch { setStats(null); } };
+  useEffect(() => { if (!getAuthToken()) { router.replace("/login"); return; } itemsApi.getStats().then(setStats).catch(() => setStats(null)); if ("Notification" in window) { setPushPermission(Notification.permission); setPermissionDismissed(sessionStorage.getItem("kq_notification_dismissed") === "yes"); } }, [router]);
 
   // Reactively open detail modal when ?item=<id> changes
   useEffect(() => {
@@ -156,10 +135,10 @@ function DashboardContent() {
       const permission = await Notification.requestPermission();
       setPushPermission(permission);
       if (permission === "granted") {
-        toast.success("Tarayıcı bildirimleri aktifleştirildi! QR tarandığında anlık uyarı alacaksınız.");
+        toast.success("Tarayıcı bildirimleri aktifleştirildi! Site açık ve görünürken bildirimler yaklaşık dakikada bir kontrol edilir.");
         try {
           new Notification("KayıpQR Bildirimleri Aktif 🔔", {
-            body: "Eşyalarınız tarandığında veya mesaj geldiğinde anında buradan haberdar edileceksiniz.",
+            body: "Site açık ve görünürken yeni bildirimleri yaklaşık dakikada bir kontrol ederiz.",
           });
         } catch (e) {
           // ignore notification trigger errors
@@ -175,12 +154,12 @@ function DashboardContent() {
   // Load scan logs when detail item is selected
   const handleOpenDetailModal = async (item: ItemData) => {
     setSelectedDetailItem(item);
-    setIsLoadingScans(true);
+    setIsLoadingScans(true); setScansError("");
     try {
       const scans = await scansApi.getItemScans(item.id);
       setItemScans(scans);
     } catch (err) {
-      console.error("Failed to load item scans:", err);
+      setScansError((err as Error).message);
       setItemScans([]);
     } finally {
       setIsLoadingScans(false);
@@ -215,6 +194,7 @@ function DashboardContent() {
       }
       const cleanName = decodeHtmlEntities(item.name);
       if (nextStatus === "resolved") {
+        setSelectedDetailItem(null);
         setCelebrationItem(updated);
         toast.success(`🎉 ${cleanName} eşyası teslim alındı olarak işaretlendi!`);
       } else if (nextStatus === "lost") {
@@ -255,19 +235,12 @@ function DashboardContent() {
     }
   };
 
-  const filteredItems = items.filter((item) => {
-    const matchesFilter = filter === "all" ? true : item.status === filter;
-    const matchesSearch =
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (item.qr_code?.unique_code && item.qr_code.unique_code.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      item.category.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesFilter && matchesSearch;
-  });
+  const filteredItems = items;
 
   const totalItems = stats?.total_items ?? items.length;
-  const safeCount = stats?.safe_items ?? items.filter((i) => i.status === "safe").length;
-  const lostCount = stats?.lost_items ?? items.filter((i) => i.status === "lost").length;
-  const resolvedCount = stats?.resolved_items ?? items.filter((i) => i.status === "resolved").length;
+  const safeCount = stats?.safe_items ?? "—";
+  const lostCount = stats?.lost_items ?? "—";
+  const resolvedCount = stats?.resolved_items ?? "—";
 
   return (
     <div className="min-h-screen dot-grid-pattern text-ink flex flex-col md:flex-row selection:bg-gold selection:text-ink pb-20 md:pb-0">
@@ -287,7 +260,7 @@ function DashboardContent() {
       >
         
         {/* Push Notification Permission Bar */}
-        {pushPermission === "default" && (
+        {pushPermission === "default" && !permissionDismissed && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -299,7 +272,7 @@ function DashboardContent() {
               </div>
               <div>
                 <strong className="font-bold block text-ink">Tarayıcı Bildirimlerini Açın</strong>
-                <span>QR kodunuz okutulduğunda veya mesaj geldiğinde anında ekranınızda uyarı alın.</span>
+                <span>Site açık ve görünürken bildirimleri yaklaşık dakikada bir kontrol ederiz. Site kapalıyken ilk mesaj e-postası tercihiniz geçerlidir.</span>
               </div>
             </div>
             <motion.button
@@ -310,6 +283,7 @@ function DashboardContent() {
             >
               Bildirimleri Aç 🔔
             </motion.button>
+            <button className="app-icon-button" aria-label="Şimdilik kapat" onClick={() => { setPermissionDismissed(true); sessionStorage.setItem("kq_notification_dismissed", "yes"); }}><X size={18} /></button>
           </motion.div>
         )}
 
@@ -371,7 +345,7 @@ function DashboardContent() {
                 Toplam Eşya
               </span>
               <div className="flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-extrabold text-ink">{totalItems}</span>
+                <span className="text-2xl sm:text-3xl font-extrabold text-ink">{stats ? totalItems : "—"}</span>
                 <span className="text-xs text-ink-soft">Etiket</span>
               </div>
             </div>
@@ -430,7 +404,7 @@ function DashboardContent() {
         </motion.div>
 
         {/* Search & Filter Tabs */}
-        {items.length > 0 && (
+        {(
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
             <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
               <button
@@ -479,7 +453,7 @@ function DashboardContent() {
               <Search className="w-4 h-4 text-ink-soft absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                value={searchQuery}
+                maxLength={100} value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Eşya veya kod ara..."
                 className="w-full pl-9 pr-4 py-2 bg-white rounded-lg border border-ink/20 text-xs font-medium text-ink shadow-xs focus:outline-none focus:ring-2 focus:ring-gold"
@@ -489,13 +463,14 @@ function DashboardContent() {
         )}
 
         {/* Content Render */}
+        {error && <div role="alert" className="app-error mb-4">{error} {items.length > 0 && "Son yüklenen kayıtlar gösteriliyor."}<button className="app-button" onClick={loadData}>Yeniden dene</button></div>}
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-7">
             <ItemCardSkeleton />
             <ItemCardSkeleton />
             <ItemCardSkeleton />
           </div>
-        ) : items.length === 0 ? (
+        ) : error && items.length === 0 ? null : items.length === 0 && (filter !== "all" || searchQuery) ? <div className="app-card text-center"><p>Aramana uygun eşya bulunamadı.</p><button className="app-button mt-4" onClick={() => { setFilter("all"); setSearchQuery(""); }}>Filtreleri temizle</button></div> : items.length === 0 ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -659,7 +634,7 @@ function DashboardContent() {
                             target="_blank"
                             className="text-[10.5px] font-bold text-ink-soft hover:text-ink hover:underline flex items-center gap-0.5"
                           >
-                            <span>Public Ekran</span>
+                            <span>Bulan kişinin ekranı</span>
                             <ExternalLink className="w-3 h-3" />
                           </Link>
                         </div>
@@ -749,13 +724,14 @@ function DashboardContent() {
           </div>
         )}
 
+      {page.hasMore && <button className="app-button mx-auto my-5" disabled={page.loadingMore || isLoading} onClick={page.loadMore}>{page.loadingMore ? "Yükleniyor…" : "Daha fazla eşya göster"}</button>}
       </motion.main>
 
       {/* Item Detail & Scan Logs Modal with AnimatePresence & Mobile Bottom Sheet */}
       <AnimatePresence>
         {selectedDetailItem && (
           <div
-            className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+            ref={detailDialog} role="dialog" aria-modal="true" aria-label="Eşya detayları" tabIndex={-1} className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
             onClick={() => setSelectedDetailItem(null)}
           >
             <motion.div
@@ -889,7 +865,8 @@ function DashboardContent() {
                   </div>
 
                   <div className="bg-white/70 rounded-xl border border-ink/15 p-3 max-h-48 overflow-y-auto space-y-2">
-                    {isLoadingScans ? (
+                    {scansError && <p role="alert" className="app-error">{scansError}<button className="app-button" onClick={() => selectedDetailItem && handleOpenDetailModal(selectedDetailItem)}>Yeniden dene</button></p>}
+                  {isLoadingScans ? (
                       <div className="py-6 text-center text-xs text-ink-soft animate-pulse flex items-center justify-center gap-1.5">
                         <Loader2 className="w-4 h-4 animate-spin text-gold-dark" />
                         <span>Tarama kayıtları yükleniyor...</span>
@@ -982,7 +959,7 @@ function DashboardContent() {
 
           return (
             <div
-              className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
+              ref={exportDialog} role="dialog" aria-modal="true" aria-label="QR etiketini indir" tabIndex={-1} className="fixed inset-0 z-50 bg-ink/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
               onClick={() => setSelectedDownloadItem(null)}
             >
               <motion.div
@@ -1038,7 +1015,8 @@ function DashboardContent() {
                   </div>
                 </div>
 
-                <div className="space-y-2.5 relative z-10 pt-3 border-t border-ink/10">
+                {qrColorError(dlColorDark, dlColorLight) && <p role="alert" className="app-error">{qrColorError(dlColorDark, dlColorLight)} <Link className="underline" href={`/studio?edit=${selectedDownloadItem.id}`}>Tasarımı düzenle</Link></p>}
+                <fieldset disabled={!!qrColorError(dlColorDark, dlColorLight)} className="space-y-2.5 relative z-10 pt-3 border-t border-ink/10">
                   {/* 1. Primary Button: Download QR Image (PNG) */}
                   <button
                     type="button"
@@ -1180,7 +1158,7 @@ function DashboardContent() {
                       </button>
                     </span>
                   </div>
-                </div>
+                </fieldset>
               </motion.div>
             </div>
           );
@@ -1190,7 +1168,7 @@ function DashboardContent() {
       {/* Celebration Modal with AnimatePresence */}
       <AnimatePresence>
         {celebrationItem && (
-          <div className="fixed inset-0 z-50 bg-ink/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div ref={celebrationDialog} role="dialog" aria-modal="true" aria-label="Eşyan teslim alındı" tabIndex={-1} className="fixed inset-0 z-50 bg-ink/50 backdrop-blur-xs flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}

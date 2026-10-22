@@ -1,5 +1,6 @@
 "use client";
 
+import { qrColorError } from "@/lib/qrPolicy";
 import React, { useMemo, useEffect } from "react";
 import qrcode from "qrcode-generator";
 
@@ -694,7 +695,8 @@ export function generateCustomQrSvgString(options: {
         1.6,
         1.6
       )}`;
-      const innerPill = roundedRectPath(fx + 1.9, fy + 2.3, 3.2, 2.4, 1.2, 1.2, 1.2, 1.2);
+      // Keep the finder center three modules wide and tall at small print sizes.
+      const innerPill = roundedRectPath(fx + 2, fy + 2, 3, 3, 0.65, 0.65, 0.65, 0.65);
       finderElements.push(
         `<path d="${outerPath}" fill="${fgColor}" fill-rule="evenodd" />`,
         `<path d="${innerPill}" fill="${fgColor}" />`
@@ -1105,6 +1107,9 @@ export const DynamicQrRenderer: React.FC<QrRendererProps> = ({
       getSvgString: () => svgMarkup,
       download: ({ name = "kayipqr", extension = "svg" }: { name?: string; extension?: string }) => {
         if (typeof window === "undefined") return;
+        const colors = resolveQrDesign({ designId, variant, dotType, dotColor, bgColor });
+        const error = qrColorError(colors.fgColor, colors.bgColor);
+        if (error) throw new Error(error);
         const hiResSvg = generateCustomQrSvgString({
           data,
           size: 2000,

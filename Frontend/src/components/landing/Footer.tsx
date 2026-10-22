@@ -64,7 +64,7 @@ export const Footer = () => {
                 </Link>
               </li>
               <li>
-                <Link href="/register" className="hover:text-ink hover:underline">
+                <Link href="/register?redirect=/studio" className="hover:text-ink hover:underline">
                   QR Tasarım Stüdyosu
                 </Link>
               </li>
@@ -110,7 +110,7 @@ export const Footer = () => {
                 </Link>
               </li>
               <li>
-                <Link href="/register" className="hover:text-ink hover:underline">
+                <Link href="/register?redirect=/studio" className="hover:text-ink hover:underline">
                   Kayıt ol
                 </Link>
               </li>
@@ -119,6 +119,7 @@ export const Footer = () => {
                   Sıkça Sorulanlar
                 </a>
               </li>
+            <li><a href="mailto:contact@durangezer.com" className="hover:text-ink hover:underline">Destek: contact@durangezer.com</a></li>
             </ul>
           </div>
         </div>

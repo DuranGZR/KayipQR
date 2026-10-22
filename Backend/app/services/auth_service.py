@@ -44,7 +44,7 @@ class AuthService:
         try:
             await db.flush()
             from app.services.outbox_service import queue_auth_email
-            await queue_auth_email(db, db_user, "verify_email")
+            await queue_auth_email(db, db_user, "verify_email", user_in.redirect_path)
             await db.commit()
         except IntegrityError:
             await db.rollback()
@@ -199,12 +199,12 @@ class AuthService:
             raise HTTPException(status_code=429, detail=f"Yeni e-posta için {retry} saniye bekle.", headers={"Retry-After": str(retry)})
 
     @staticmethod
-    async def resend_verification(db: AsyncSession, email: str) -> dict:
+    async def resend_verification(db: AsyncSession, email: str, redirect_path: str | None = None) -> dict:
         await AuthService.email_cooldown("verify_email", email)
         user = await AuthService.get_by_email(db, email)
         if user and user.is_active and not user.email_verified:
             from app.services.outbox_service import queue_auth_email
-            await queue_auth_email(db, user, "verify_email")
+            await queue_auth_email(db, user, "verify_email", redirect_path)
             await db.commit()
         return {"message": "Doğrulanmamış bir hesabın varsa doğrulama e-postası gönderim için hazırlanmıştır.", "retry_after": 60}
 

@@ -1,4 +1,21 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api/v1";
+// A failed request is never silently retried: mutations may already have reached the server.
+export async function apiFetch(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs = 20000): Promise<Response> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) throw new Error("İnternet bağlantın yok. Bağlantını kontrol edip yeniden dene.");
+  const controller = new AbortController();
+  let timedOut = false;
+  const abort = () => controller.abort();
+  init.signal?.addEventListener("abort", abort, { once: true });
+  if (init.signal?.aborted) controller.abort();
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  try { return await fetch(input, { ...init, signal: controller.signal }); }
+  catch (cause) {
+    if (timedOut) throw new Error("İşlem zaman aşımına uğradı. Bağlantını kontrol edip yeniden dene.");
+    if (init.signal?.aborted) throw cause;
+    throw new Error("Sunucuya bağlanılamadı. Bilgilerin silinmedi; lütfen yeniden dene.");
+  } finally { clearTimeout(timer); init.signal?.removeEventListener("abort", abort); }
+}
+
 export const CHAT_WEBSOCKETS_ENABLED = process.env.NEXT_PUBLIC_CHAT_TRANSPORT !== "polling";
 
 export interface User {
@@ -188,6 +205,7 @@ export const setAuthSession = (
 };
 
 export const clearAuthTokens = (): void => {
+  profileCache = null;
   if (typeof window === "undefined") return;
   localStorage.removeItem("kayipqr_token");
   localStorage.removeItem("kayipqr_user");
@@ -220,23 +238,25 @@ export const getPublicAppUrl = (): string => {
 };
 
 async function authAction<T>(path: string, data: object): Promise<T> {
-  const response = await fetch(`${API_BASE}/auth/${path}`, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data) });
+  const response = await apiFetch(`${API_BASE}/auth/${path}`, { method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(data) });
   const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw Object.assign(new Error(typeof result.detail === "string" ? result.detail : "İşlem tamamlanamadı."), {retryAfter: Number(response.headers.get("Retry-After")) || 0});
+  if (!response.ok) throw Object.assign(new Error(typeof result.detail === "string" ? result.detail : "İşlem tamamlanamadı."), {status: response.status, retryAfter: Number(response.headers.get("Retry-After")) || 0});
   return result;
 }
 
 export const googleAuthApi = {
-  config: async (): Promise<{enabled: boolean}> => { const response = await fetch(`${API_BASE}/auth/google/config`); if (!response.ok) return {enabled:false}; return response.json(); },
+  config: async (): Promise<{enabled: boolean}> => { const response = await apiFetch(`${API_BASE}/auth/google/config`); if (!response.ok) return {enabled:false}; return response.json(); },
   startUrl: (redirect: string) => `${API_BASE}/auth/google/start?redirect=${encodeURIComponent(redirect)}`,
   exchange: (token: string) => authAction<AuthResponse>("google/exchange", {token}),
 };
 
+let profileCache: { key: string; expires: number; request: Promise<User> } | null = null;
+
 export const authApi = {
   verifyEmail: (token: string) => authAction<AuthResponse>("verify-email", {token}),
-  resendVerification: (email: string) => authAction<{message: string; retry_after: number}>("resend-verification", {email}),
-  register: async (data: { email: string; password: string; full_name?: string; phone_number?: string }): Promise<{message: string; email: string; verification_required: boolean}> => {
-    const res = await fetch(`${API_BASE}/auth/register`, {
+  resendVerification: (email: string, redirect_path?: string) => authAction<{message: string; retry_after: number}>("resend-verification", {email, redirect_path}),
+  register: async (data: { email: string; password: string; full_name?: string; phone_number?: string; redirect_path?: string }): Promise<{message: string; email: string; verification_required: boolean}> => {
+    const res = await apiFetch(`${API_BASE}/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -250,7 +270,7 @@ export const authApi = {
   },
 
   login: async (data: { email: string; password: string }): Promise<AuthResponse> => {
-    const res = await fetch(`${API_BASE}/auth/login`, {
+    const res = await apiFetch(`${API_BASE}/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -263,17 +283,19 @@ export const authApi = {
     return body;
   },
 
-  getMe: async (token?: string): Promise<User> => {
-    const res = await fetch(`${API_BASE}/auth/me`, {
-      headers: getHeaders(token),
-    });
-
-    handleAuthFailureIfNeeded(res);
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(body.detail || "Oturum süresi doldu.");
-    }
-    return body;
+  getMe: (token?: string): Promise<User> => {
+    const key = token || getAuthToken() || "";
+    if (profileCache?.key === key && profileCache.expires > Date.now()) return profileCache.request;
+    const request = (async () => {
+      const res = await apiFetch(`${API_BASE}/auth/me`, { headers: getHeaders(token) });
+      handleAuthFailureIfNeeded(res);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.detail || "Oturum bilgileri yüklenemedi.");
+      return body as User;
+    })();
+    profileCache = { key, request, expires: Date.now() + 15000 };
+    request.catch(() => { if (profileCache?.request === request) profileCache = null; });
+    return request;
   },
 
   updateProfile: async (data: {
@@ -283,7 +305,8 @@ export const authApi = {
     email_on_scan?: boolean;
     email_on_message?: boolean;
   }): Promise<User> => {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    profileCache = null;
+    const res = await apiFetch(`${API_BASE}/auth/me`, {
       method: "PUT",
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -298,7 +321,7 @@ export const authApi = {
   },
 
   deleteAccount: async (): Promise<void> => {
-    const res = await fetch(`${API_BASE}/auth/me`, {
+    const res = await apiFetch(`${API_BASE}/auth/me`, {
       method: "DELETE",
       headers: getHeaders(),
     });
@@ -314,7 +337,7 @@ export const authApi = {
     current_password: string;
     new_password: string;
   }): Promise<{ message: string }> => {
-    const res = await fetch(`${API_BASE}/auth/change-password`, {
+    const res = await apiFetch(`${API_BASE}/auth/change-password`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -333,7 +356,7 @@ export const authApi = {
   },
 
   forgotPassword: async (email: string): Promise<{ message: string; retry_after: number }> => {
-    const res = await fetch(`${API_BASE}/auth/forgot-password`, {
+    const res = await apiFetch(`${API_BASE}/auth/forgot-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
@@ -347,7 +370,7 @@ export const authApi = {
   },
 
   resetPassword: async (token: string, new_password: string): Promise<{ message: string }> => {
-    const res = await fetch(`${API_BASE}/auth/reset-password`, {
+    const res = await apiFetch(`${API_BASE}/auth/reset-password`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token, new_password }),
@@ -388,19 +411,11 @@ export const getWebSocketChatUrl = (conversationId: string): string => {
 };
 
 
-// Keep the existing screens intact while bounding every backend response.
-async function fetchListPages<T extends { id: string }>(path: string, errorMessage: string): Promise<T[]> {
-  const records = new Map<string, T>();
-  let offset = 0;
-  while (true) {
-    const res = await fetch(`${API_BASE}${path}${path.includes("?") ? "&" : "?"}limit=100&offset=${offset}`, { headers: getHeaders() });
-    handleAuthFailureIfNeeded(res);
-    if (!res.ok) throw new Error(errorMessage);
-    const page: T[] = await res.json();
-    page.forEach(record => records.set(record.id, record));
-    if (page.length < 100) return Array.from(records.values());
-    offset += page.length;
-  }
+async function fetchListPage<T>(path: string, errorMessage: string, offset = 0): Promise<T[]> {
+  const res = await apiFetch(`${API_BASE}${path}${path.includes("?") ? "&" : "?"}limit=20&offset=${offset}`, { headers: getHeaders() });
+  handleAuthFailureIfNeeded(res);
+  if (!res.ok) throw new Error(errorMessage);
+  return res.json();
 }
 
 async function fetchConversationHistory(path: string, authenticated: boolean, previous?: ConversationDetailData | null): Promise<ConversationDetailData> {
@@ -412,7 +427,7 @@ async function fetchConversationHistory(path: string, authenticated: boolean, pr
   do {
     const params = new URLSearchParams({ limit: "100" });
     if (cursor) params.set(incremental ? "after" : "before", cursor);
-    const res = await fetch(`${API_BASE}${path}?${params}`, authenticated ? { headers: getHeaders() } : {});
+    const res = await apiFetch(`${API_BASE}${path}?${params}`, authenticated ? { headers: getHeaders() } : {});
     if (authenticated) handleAuthFailureIfNeeded(res);
     if (!res.ok) {
       const error = await res.json().catch(() => ({}));
@@ -444,23 +459,23 @@ export function mergeChatDetails(previous: ConversationDetailData | null, incomi
 }
 
 async function fetchChatPage<T>(path: string, authenticated: boolean): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, authenticated ? { headers: getHeaders() } : {});
+  const response = await apiFetch(`${API_BASE}${path}`, authenticated ? { headers: getHeaders() } : {});
   if (authenticated) handleAuthFailureIfNeeded(response);
   if (!response.ok) throw new Error("Mesajlar yüklenemedi. Tekrar deneyin.");
   return response.json();
 }
 
 export const itemsApi = {
-  list: async (statusFilter?: string, searchQuery?: string): Promise<ItemData[]> => {
+  list: async (statusFilter?: string, searchQuery?: string, offset = 0): Promise<ItemData[]> => {
     const params = new URLSearchParams();
     if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
     if (searchQuery) params.append("search", searchQuery);
 
-    return fetchListPages<ItemData>(`/items?${params.toString()}`, "Eşyalar yüklenemedi.");
+    return fetchListPage<ItemData>(`/items?${params.toString()}`, "Eşyalar yüklenemedi.", offset);
   },
 
   get: async (itemId: string): Promise<ItemData> => {
-    const res = await fetch(`${API_BASE}/items/${itemId}`, {
+    const res = await apiFetch(`${API_BASE}/items/${itemId}`, {
       headers: getHeaders(),
     });
 
@@ -487,7 +502,7 @@ export const itemsApi = {
     qr_frame_type?: string;
     qr_frame_text?: string;
   }): Promise<ItemData> => {
-    const res = await fetch(`${API_BASE}/items`, {
+    const res = await apiFetch(`${API_BASE}/items`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -519,7 +534,7 @@ export const itemsApi = {
       qr_frame_text?: string;
     }
   ): Promise<ItemData> => {
-    const res = await fetch(`${API_BASE}/items/${itemId}`, {
+    const res = await apiFetch(`${API_BASE}/items/${itemId}`, {
       method: "PUT",
       headers: getHeaders(),
       body: JSON.stringify(data),
@@ -534,7 +549,7 @@ export const itemsApi = {
   },
 
   updateStatus: async (itemId: string, newStatus: "safe" | "lost" | "resolved"): Promise<ItemData> => {
-    const res = await fetch(`${API_BASE}/items/${itemId}/status`, {
+    const res = await apiFetch(`${API_BASE}/items/${itemId}/status`, {
       method: "PUT",
       headers: getHeaders(),
       body: JSON.stringify({ status: newStatus }),
@@ -549,7 +564,7 @@ export const itemsApi = {
   },
 
   toggleActive: async (itemId: string): Promise<ItemData> => {
-    const res = await fetch(`${API_BASE}/items/${itemId}/toggle-active`, {
+    const res = await apiFetch(`${API_BASE}/items/${itemId}/toggle-active`, {
       method: "PATCH",
       headers: getHeaders(),
     });
@@ -563,7 +578,7 @@ export const itemsApi = {
   },
 
   delete: async (itemId: string): Promise<void> => {
-    const res = await fetch(`${API_BASE}/items/${itemId}`, {
+    const res = await apiFetch(`${API_BASE}/items/${itemId}`, {
       method: "DELETE",
       headers: getHeaders(),
     });
@@ -576,7 +591,7 @@ export const itemsApi = {
   },
 
   getStats: async (): Promise<DashboardStats> => {
-    const res = await fetch(`${API_BASE}/dashboard/stats`, {
+    const res = await apiFetch(`${API_BASE}/dashboard/stats`, {
       headers: getHeaders(),
     });
 
@@ -590,11 +605,12 @@ export const itemsApi = {
 };
 
 export const chatApi = {
-  list: async (statusFilter?: string): Promise<ConversationData[]> => {
+  list: async (statusFilter?: string, searchQuery?: string, offset = 0): Promise<ConversationData[]> => {
     const params = new URLSearchParams();
     if (statusFilter && statusFilter !== "all") params.append("status", statusFilter);
 
-    return fetchListPages<ConversationData>(`/conversations?${params.toString()}`, "Konuşmalar yüklenemedi.");
+    if (searchQuery) params.set("search", searchQuery);
+    return fetchListPage<ConversationData>(`/conversations?${params.toString()}`, "Konuşmalar yüklenemedi.", offset);
   },
 
   getDetails: async (conversationId: string, previous?: ConversationDetailData | null): Promise<ConversationDetailData> => {
@@ -609,7 +625,7 @@ export const chatApi = {
     content: string,
     location?: { lat?: number; lng?: number; address?: string }
   ): Promise<MessageData> => {
-    const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages`, {
+    const res = await apiFetch(`${API_BASE}/conversations/${conversationId}/messages`, {
       method: "POST",
       headers: getHeaders(),
       body: JSON.stringify({
@@ -632,7 +648,7 @@ export const chatApi = {
     conversationId: string,
     status: "active" | "closed" | "blocked" | "resolved"
   ): Promise<ConversationData> => {
-    const res = await fetch(`${API_BASE}/conversations/${conversationId}/status`, {
+    const res = await apiFetch(`${API_BASE}/conversations/${conversationId}/status`, {
       method: "PATCH",
       headers: getHeaders(),
       body: JSON.stringify({ status }),
@@ -647,7 +663,7 @@ export const chatApi = {
   },
 
   delete: async (conversationId: string): Promise<void> => {
-    const res = await fetch(`${API_BASE}/conversations/${conversationId}`, {
+    const res = await apiFetch(`${API_BASE}/conversations/${conversationId}`, {
       method: "DELETE",
       headers: getHeaders(),
     });
@@ -696,7 +712,7 @@ export async function uploadImage(file: File): Promise<{ url: string }> {
   file = await prepareUpload(file);
   const form = new FormData(); form.append("file", file);
   const token = getAuthToken();
-  const response = await fetch(`${API_BASE}/uploads`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+  const response = await apiFetch(`${API_BASE}/uploads`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
   handleAuthFailureIfNeeded(response);
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.detail || "Fotoğraf yüklenemedi.");
@@ -705,7 +721,7 @@ export async function uploadImage(file: File): Promise<{ url: string }> {
 
 export const publicApi = {
   getByQrCode: async (uniqueCode: string): Promise<PublicItemData> => {
-    const res = await fetch(`${API_BASE}/public/q/${encodeURIComponent(uniqueCode)}`);
+    const res = await apiFetch(`${API_BASE}/public/q/${encodeURIComponent(uniqueCode)}`);
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: "Eşya bilgisi bulunamadı." }));
@@ -719,7 +735,7 @@ export const publicApi = {
     const formData = new FormData();
     formData.append("file", file);
 
-    const res = await fetch(`${API_BASE}/public/upload`, {
+    const res = await apiFetch(`${API_BASE}/public/upload`, {
       method: "POST",
       body: formData,
     });
@@ -742,7 +758,7 @@ export const publicApi = {
       approximate_country?: string;
     }
   ): Promise<PublicContactResponse> => {
-    const res = await fetch(`${API_BASE}/public/q/${encodeURIComponent(uniqueCode)}/contact`, {
+    const res = await apiFetch(`${API_BASE}/public/q/${encodeURIComponent(uniqueCode)}/contact`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
@@ -767,7 +783,7 @@ export const publicApi = {
     content: string,
     location?: { lat?: number; lng?: number; address?: string }
   ): Promise<MessageData> => {
-    const res = await fetch(`${API_BASE}/conversations/finder/${encodeURIComponent(sessionToken)}/messages`, {
+    const res = await apiFetch(`${API_BASE}/conversations/finder/${encodeURIComponent(sessionToken)}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -787,8 +803,14 @@ export const publicApi = {
 };
 
 export const notificationsApi = {
-  list: async (): Promise<NotificationData[]> => {
-    const res = await fetch(`${API_BASE}/notifications`, {
+  unreadCount: async (): Promise<number> => {
+    const res = await apiFetch(`${API_BASE}/notifications/unread-count`, { headers: getHeaders() });
+    handleAuthFailureIfNeeded(res);
+    if (!res.ok) throw new Error("Bildirim sayısı alınamadı.");
+    return (await res.json()).unread_count;
+  },
+  list: async (offset = 0, unreadOnly = false): Promise<NotificationData[]> => {
+    const res = await apiFetch(`${API_BASE}/notifications?limit=20&offset=${offset}&unread_only=${unreadOnly}`, {
       headers: getHeaders(),
     });
 
@@ -797,11 +819,11 @@ export const notificationsApi = {
       const err = await res.json().catch(() => ({ detail: "Bildirimler alınamadı." }));
       throw new Error(err.detail || "Bildirimler alınamadı.");
     }
-    return res.json().catch(() => []);
+    return res.json();
   },
 
   markAsRead: async (notificationId: string): Promise<void> => {
-    const res = await fetch(`${API_BASE}/notifications/${notificationId}/read`, {
+    const res = await apiFetch(`${API_BASE}/notifications/${notificationId}/read`, {
       method: "PATCH",
       headers: getHeaders(),
     });
@@ -814,7 +836,7 @@ export const notificationsApi = {
   },
 
   markAllAsRead: async (): Promise<void> => {
-    const res = await fetch(`${API_BASE}/notifications/mark-all-read`, {
+    const res = await apiFetch(`${API_BASE}/notifications/mark-all-read`, {
       method: "PATCH",
       headers: getHeaders(),
     });
@@ -829,7 +851,7 @@ export const notificationsApi = {
 
 export const scansApi = {
   getItemScans: async (itemId: string): Promise<QRScanData[]> => {
-    const res = await fetch(`${API_BASE}/scans/item/${itemId}`, {
+    const res = await apiFetch(`${API_BASE}/scans/item/${itemId}`, {
       headers: getHeaders(),
     });
 
@@ -838,11 +860,11 @@ export const scansApi = {
       const err = await res.json().catch(() => ({ detail: "Tarama geçmişi alınamadı." }));
       throw new Error(err.detail || "Tarama geçmişi alınamadı.");
     }
-    return res.json().catch(() => []);
+    return res.json();
   },
 
   getRecent: async (limit: number = 20): Promise<QRScanData[]> => {
-    const res = await fetch(`${API_BASE}/scans/recent?limit=${limit}`, {
+    const res = await apiFetch(`${API_BASE}/scans/recent?limit=${limit}`, {
       headers: getHeaders(),
     });
 
@@ -851,7 +873,7 @@ export const scansApi = {
       const err = await res.json().catch(() => ({ detail: "Son taramalar alınamadı." }));
       throw new Error(err.detail || "Son taramalar alınamadı.");
     }
-    return res.json().catch(() => []);
+    return res.json();
   },
 };
 

@@ -19,7 +19,7 @@ router = APIRouter()
 @router.get("", response_model=List[ItemResponse])
 async def list_items(
     status: Optional[str] = Query(None, description="Filtre: all, safe, lost, resolved"),
-    search: Optional[str] = Query(None, description="Eşya adı arama terimi"),
+    search: Optional[str] = Query(None, max_length=100, description="Eşya adı, kategori veya QR kodu"),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),

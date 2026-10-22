@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { authApi, setAuthSession } from "@/lib/api";
 import { AccountSketchStyles } from "@/components/dashboard/AccountSketchStyles";
+import { clearVerificationFlow, readVerificationFlow } from "@/lib/verificationFlow";
 
 export default function VerifyEmailPage() {
   const router = useRouter();
@@ -13,17 +14,17 @@ export default function VerifyEmailPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [remaining, setRemaining] = useState(0);
+  const [redirect, setRedirect] = useState("/dashboard");
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setToken(params.get("token") || ""); setEmail(params.get("email") || "");
-    window.history.replaceState(null, "", window.location.pathname);
+    const flow = readVerificationFlow();
+    setToken(flow.token); setEmail(flow.email); setRedirect(flow.redirect);
   }, []);
   useEffect(() => { if (!remaining) return; const timer = setTimeout(() => setRemaining(value => Math.max(0, value - 1)), 1000); return () => clearTimeout(timer); }, [remaining]);
   const verify = async () => {
     if (busy) return;
     setBusy(true); setError("");
-    try { const result = await authApi.verifyEmail(token); setAuthSession(result.access_token, result.user, true); router.replace("/dashboard"); }
-    catch (cause) { setError((cause as Error).message); }
+    try { const result = await authApi.verifyEmail(token); clearVerificationFlow(); setAuthSession(result.access_token, result.user, true); router.replace(redirect); }
+    catch (cause) { const failure = cause as Error & {status?: number}; setError(failure.message); if (failure.status === 400 || failure.status === 410) { clearVerificationFlow(); setToken(""); } }
     finally { setBusy(false); }
   };
   return <main className="min-h-screen dot-grid-pattern flex items-center justify-center p-6"><AccountSketchStyles /><section className="app-card max-w-md w-full space-y-5">
@@ -33,7 +34,7 @@ export default function VerifyEmailPage() {
     {token && <button className="app-button app-button-primary w-full" disabled={busy} onClick={verify}>{busy ? "Doğrulanıyor…" : "Adresimi doğrula ve giriş yap"}</button>}
     <form className="space-y-4 border-t border-ink/10 pt-5" onSubmit={async event => {
       event.preventDefault(); if (busy || remaining) return; setBusy(true); setError("");
-      try { const result = await authApi.resendVerification(email.trim()); setMessage(result.message); setRemaining(result.retry_after); }
+      try { const result = await authApi.resendVerification(email.trim(), redirect); setMessage(result.message); setRemaining(result.retry_after); }
       catch (cause) { const failure = cause as Error & {retryAfter?: number}; setError(failure.message); setRemaining(failure.retryAfter || 0); }
       finally { setBusy(false); }
     }}><label className="app-label" htmlFor="verify-email">E-posta adresin</label><input className="app-input" id="verify-email" type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} /><button className="app-button w-full" disabled={busy || remaining > 0}>{remaining ? `${remaining} saniye sonra yeniden iste` : "Doğrulama e-postasını yeniden gönder"}</button></form>

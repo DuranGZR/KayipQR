@@ -1,5 +1,6 @@
 "use client";
 
+import { useNotifications } from "@/lib/useNotifications";
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -13,58 +14,15 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { WobblyCardFrame } from "@/components/ui/SketchBorders";
-import { notificationsApi, getAuthToken, NotificationData } from "@/lib/api";
+import { NotificationData } from "@/lib/api";
 import { decodeHtmlEntities } from "@/lib/utils";
-import { startVisiblePolling } from "@/lib/visiblePolling";
 
 export const NotificationDropdown: React.FC = () => {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationData[]>([]);
+  const feed = useNotifications();
+  const { items: notifications, unreadCount } = feed;
   const dropdownRef = useRef<HTMLDivElement>(null);
-  const seenIdsRef = useRef<Set<string>>(new Set());
-  const hasLoadedInitialRef = useRef(false);
-
-  const loadNotifications = async () => {
-    const token = getAuthToken();
-    if (!token) return;
-
-    try {
-      const data = await notificationsApi.list();
-      if (!hasLoadedInitialRef.current) {
-        data.forEach((n) => seenIdsRef.current.add(n.id));
-        hasLoadedInitialRef.current = true;
-      } else {
-        data.forEach((n) => {
-          if (!seenIdsRef.current.has(n.id)) {
-            seenIdsRef.current.add(n.id);
-            if (
-              !n.is_read &&
-              typeof window !== "undefined" &&
-              "Notification" in window &&
-              Notification.permission === "granted"
-            ) {
-              try {
-                new Notification(decodeHtmlEntities(n.title), {
-                  body: decodeHtmlEntities(n.body),
-                });
-              } catch {
-                // Ignore browser notification permission/context errors
-              }
-            }
-          }
-        });
-      }
-      setNotifications(data);
-    } catch (err) {
-      console.error("Failed to fetch notifications:", err);
-    }
-  };
-
-  useEffect(() => {
-    return startVisiblePolling(loadNotifications, 60000);
-  }, []);
-
   // Close on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -76,34 +34,12 @@ export const NotificationDropdown: React.FC = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
-
   const handleNotificationClick = async (n: NotificationData) => {
-    if (!n.is_read) {
-      try {
-        await notificationsApi.markAsRead(n.id);
-        setNotifications((prev) =>
-          prev.map((item) => (item.id === n.id ? { ...item, is_read: true } : item))
-        );
-      } catch (err) {
-        console.error("Failed to mark notification read:", err);
-      }
-    }
+    if (!n.is_read && !await feed.mark(n.id)) return;
     setIsOpen(false);
-    if (n.link) {
-      router.push(n.link);
-    }
+    if (n.link?.startsWith("/") && !n.link.startsWith("//")) router.push(n.link);
   };
-
-  const handleMarkAllRead = async () => {
-    try {
-      await notificationsApi.markAllAsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    } catch (err) {
-      console.error("Failed to mark all notifications read:", err);
-    }
-  };
-
+  const handleMarkAllRead = () => feed.mark();
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Trigger Bell Button */}
@@ -117,12 +53,12 @@ export const NotificationDropdown: React.FC = () => {
             ? "bg-gold text-ink border-ink shadow-xs"
             : "bg-white text-ink-soft hover:text-ink hover:bg-paper-hover border-ink/20 shadow-xs"
         }`}
-        title="Bildirimler"
+        title="Bildirimler" aria-label={`Bildirimler${unreadCount === null ? "" : `, ${unreadCount} okunmamış`}`} aria-expanded={isOpen}
       >
         <Bell className="w-4 h-4" />
-        {unreadCount > 0 && (
+        {(unreadCount ?? 0) > 0 && (
           <span className="absolute -top-1 -right-1 min-w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1">
-            {unreadCount > 9 ? "9+" : unreadCount}
+            {(unreadCount ?? 0) > 9 ? "9+" : unreadCount}
           </span>
         )}
       </motion.button>
@@ -145,14 +81,14 @@ export const NotificationDropdown: React.FC = () => {
                 <div className="flex items-center gap-1.5">
                   <Bell className="w-4 h-4 text-gold-dark" />
                   <span className="font-bold text-xs text-ink">Bildirimler</span>
-                  {unreadCount > 0 && (
+                  {(unreadCount ?? 0) > 0 && (
                     <span className="text-[10px] font-bold bg-gold/40 px-1.5 py-0.2 rounded text-ink">
                       {unreadCount} yeni
                     </span>
                   )}
                 </div>
 
-                {unreadCount > 0 && (
+                {(unreadCount ?? 0) > 0 && (
                   <button
                     onClick={handleMarkAllRead}
                     className="text-[11px] font-bold text-ink-soft hover:text-ink flex items-center gap-1 hover:underline cursor-pointer"
@@ -165,7 +101,10 @@ export const NotificationDropdown: React.FC = () => {
 
               {/* List */}
               <div className="space-y-2 max-h-[360px] overflow-y-auto no-scrollbar">
-                {notifications.length === 0 ? (
+                {feed.error && <p role="alert" className="app-error">{feed.error}<button onClick={feed.reload}>Yeniden dene</button></p>}
+                <button className="app-button mb-2" aria-pressed={feed.unreadOnly} onClick={() => feed.setUnreadOnly(!feed.unreadOnly)}>{feed.unreadOnly ? "Tümü" : "Okunmamışlar"}</button>
+                {feed.hasMore && <button className="app-button" disabled={feed.loadingMore} onClick={feed.loadMore}>Daha fazla bildirim</button>}
+                {feed.loading ? <p role="status">Yükleniyor…</p> : notifications.length === 0 && !feed.error ? (
                   <div className="py-7 text-center text-xs text-ink-soft">
                     Henüz yeni bir bildirim bulunmuyor.
                   </div>
@@ -177,11 +116,11 @@ export const NotificationDropdown: React.FC = () => {
                     const isMessage = n.type === "new_message" || cleanTitle.includes("Mesaj");
 
                     return (
-                      <motion.div
+                      <motion.button type="button" disabled={feed.busy}
                         key={n.id}
                         whileHover={{ scale: 1.01 }}
                         onClick={() => handleNotificationClick(n)}
-                        className={`p-3 rounded-xl border text-xs transition-all cursor-pointer ${
+                        className={`w-full text-left p-3 rounded-xl border text-xs transition-all cursor-pointer ${
                           !n.is_read
                             ? "bg-gold/15 border-gold/40 shadow-xs"
                             : "bg-white border-ink/10 opacity-75 hover:opacity-100"
@@ -218,7 +157,7 @@ export const NotificationDropdown: React.FC = () => {
                             </span>
                           )}
                         </div>
-                      </motion.div>
+                      </motion.button>
                     );
                   })
                 )}

@@ -4,6 +4,8 @@ import { mergeChatDetails } from "@/lib/api";
 import { OlderMessages } from "@/components/ui/OlderMessages";
 import { ChatImage } from "@/components/ui/ChatImage";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { usePagedList } from "@/lib/usePagedList";
+import { useResponsiveState } from "@/lib/responsiveState";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, ArrowDown, Plus, MessageCircle, Search, Send, MoreHorizontal, Camera, MapPin, Check, CheckCheck, Loader2, X, ShieldCheck, ExternalLink, Package } from "lucide-react";
@@ -24,24 +26,26 @@ function MessagesContent() {
   const params = useSearchParams();
   const activeId = params.get("id");
   const toast = useToast();
-  const [list, setList] = useState<ConversationData[]>([]);
+
   const [details, setDetails] = useState<ConversationDetailData | null>(null);
   const latestChat = useRef(details);
   useEffect(() => { latestChat.current = details; }, [details]);
-  const [loading, setLoading] = useState(true);
+
   const [loadingChat, setLoadingChat] = useState(false);
-  const [listError, setListError] = useState("");
+
   const [chatError, setChatError] = useState("");
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
-  const [text, setText] = useState("");
-  const [sending, setSending] = useState(false);
+  const page = usePagedList(`${filter}:${query}`, offset => chatApi.list(filter, query, offset));
+  const { items: list, setItems: setList, loading, error: listError } = page;
+  const [text, setText] = useResponsiveState(`reply:${activeId || "none"}`, "");
+  const [sending, setSending] = useResponsiveState(`replybusy:${activeId || "none"}`, false);
   const [connected, setConnected] = useState(false);
   const [typing, setTyping] = useState(false);
   const [actions, setActions] = useState(false);
   const [attachments, setAttachments] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
-  const [location, setLocation] = useState<{ lat?: number; lng?: number; address?: string }>({});
+  const [location, setLocation] = useResponsiveState<{ lat?: number; lng?: number; address?: string }>(`replylocation:${activeId || "none"}`, {});
   const [gpsBusy, setGpsBusy] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
@@ -79,13 +83,8 @@ function MessagesContent() {
     window.visualViewport?.addEventListener("resize", resize);
     return () => window.visualViewport?.removeEventListener("resize", resize);
   }, [activeId, scrollBottom]);
-  const loadList = useCallback(async () => {
-    if (!getAuthToken()) { router.replace("/login"); return; }
-    try { setList(await chatApi.list()); setListError(""); }
-    catch (error) { setListError((error as Error).message); if (!getAuthToken()) router.replace("/login"); }
-    finally { setLoading(false); }
-  }, [router]);
-  useEffect(() => startVisiblePolling(loadList, 30000), [loadList]);
+  const loadList = page.refresh;
+  useEffect(() => startVisiblePolling(() => loadList(true), 30000, false), [loadList]);
 
   const loadDetails = useCallback(async (id: string, initial = false) => {
     if (initial) setLoadingChat(true);
@@ -100,7 +99,7 @@ function MessagesContent() {
     finally { if (activeRef.current === id) setLoadingChat(false); }
   }, [scrollBottom]);
   useEffect(() => {
-    setDetails(null); setChatError(""); setText(""); setLocation({});
+    setDetails(null); setChatError("");
     setNewBelow(false); atBottom.current = true;
     if (activeId) loadDetails(activeId, true);
   }, [activeId, loadDetails]);
@@ -159,7 +158,7 @@ function MessagesContent() {
   }, [activeId, connected, loadDetails]);
 
   const sendContent = async (content: string, sharedLocation = location) => {
-    if (!activeId || sendingLock.current) return;
+    if (!activeId || sendingLock.current || sending) return;
     const conversationId = activeId;
     sendingLock.current = true; setSending(true);
     try {
@@ -181,7 +180,7 @@ function MessagesContent() {
     finally { setActionBusy(false); }
   };
   const unread = list.reduce((sum, item) => sum + (item.unread_count || 0), 0);
-  const filtered = list.filter(item => (filter === "all" || (filter === "unread" ? !!item.unread_count : item.status === filter)) && [item.item?.name, item.finder_alias, item.last_message?.content].some(value => decodeHtmlEntities(value).toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR"))));
+  const filtered = list;
   const closed = details?.status === "closed" || details?.status === "blocked";
   const renderMessage = (message: MessageData) => {
     const own = message.sender_type === "owner";
@@ -203,15 +202,16 @@ function MessagesContent() {
       <div className="app-conversations flex-1 min-h-0 md:flex">
         <aside className={`${activeId ? "hidden md:flex" : "flex"} flex-col md:w-[300px] lg:w-[340px] md:shrink-0 md:border-r md:border-ink/10`}>
           <div className="p-0 md:p-5 space-y-3 pb-4">
-            <div className="relative"><Search size={19} className="absolute left-4 top-4 text-ink-soft" /><input className="app-input !pl-11" aria-label="Konuşmalarda ara" placeholder="Eşya veya mesaj ara" value={query} onChange={event => setQuery(event.target.value)} /></div>
+            <div className="relative"><Search size={19} className="absolute left-4 top-4 text-ink-soft" /><input className="app-input !pl-11" aria-label="Konuşmalarda ara" placeholder="Eşya veya mesaj ara" maxLength={100} value={query} onChange={event => setQuery(event.target.value)} /></div>
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">{[["all", "Tümü"], ["unread", "Okunmamış"], ["active", "Aktif"], ["resolved", "Çözüldü"], ["closed", "Kapalı"]].map(([key, label]) => <button key={key} className="app-chip" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}</div>
           </div>
-          {listError && <div role="alert" className="app-error m-3">{listError}<button className="underline block mt-2" onClick={loadList}>Yeniden dene</button></div>}
+          {listError && <div role="alert" className="app-error m-3">{listError}<button className="underline block mt-2" onClick={() => loadList()}>Yeniden dene</button></div>}
           <div className="md:overflow-y-auto flex-1">
-            {loading ? <p className="py-12 text-center text-ink-soft" role="status">Konuşmalar yükleniyor…</p> : filtered.length ? filtered.map(item => <Link key={item.id} href={`/messages?id=${item.id}`} className={`flex gap-3 px-1 md:px-5 py-5 border-b border-ink/10 ${activeId === item.id ? "bg-gold/10" : ""}`}>
+            {page.hasMore && <button className="app-button w-full" disabled={page.loadingMore} onClick={page.loadMore}>Daha fazla konuşma</button>}
+            {loading ? <p className="py-12 text-center text-ink-soft" role="status">Konuşmalar yükleniyor…</p> : listError && !list.length ? null : filtered.length ? filtered.map(item => <Link key={item.id} href={`/messages?id=${item.id}`} className={`flex gap-3 px-1 md:px-5 py-5 border-b border-ink/10 ${activeId === item.id ? "bg-gold/10" : ""}`}>
               <span className="w-12 h-12 rounded-2xl bg-[#e6ede5] text-[#1E7E75] shrink-0 flex items-center justify-center overflow-hidden">{item.item?.image_url ? <img src={getMediaUrl(item.item.image_url)} alt="" className="w-full h-full object-cover" /> : <Package size={23} />}</span>
               <span className="flex-1 min-w-0"><span className="flex justify-between items-center gap-2"><strong className="text-[15px] truncate">{decodeHtmlEntities(item.item?.name) || "Kayıp eşya"}</strong><time className="text-[11px] text-ink-soft shrink-0">{time(item.updated_at)}</time></span><span className="block text-sm text-ink-soft truncate mt-1">{item.last_message ? (item.last_message.sender_type === "owner" ? "Sen: " : "") + (parseMessageMedia(decodeHtmlEntities(item.last_message.content)).image ? "Fotoğraf gönderildi" : decodeHtmlEntities(item.last_message.content)) : "Yeni konuşma"}</span><span className="flex justify-between items-center mt-2"><span className="text-xs text-ink-soft">{item.finder_alias} · {item.status === "resolved" ? "Teslim alındı" : item.status === "active" ? "Aktif" : "Kapalı"}</span>{!!item.unread_count && <span className="rounded-full bg-[#1E7E75] text-white text-xs font-bold px-2 py-0.5">{item.unread_count}</span>}</span></span>
-            </Link>) : <div className="text-center px-6 py-14"><MessageCircle size={36} className="mx-auto text-ink/25 mb-4" /><h2 className="font-bold">{list.length ? "Konuşma bulunamadı" : "Henüz mesajın yok"}</h2><p className="text-sm leading-relaxed text-ink-soft mt-2">{list.length ? "Başka bir arama veya filtre deneyebilirsin." : "Birisi QR etiketin üzerinden yazdığında konuşmanız burada görünecek."}</p>{!!list.length && <button className="app-button mt-4" onClick={() => { setFilter("all"); setQuery(""); }}>Filtreleri temizle</button>}</div>}
+            </Link>) : <div className="text-center px-6 py-14"><MessageCircle size={36} className="mx-auto text-ink/25 mb-4" /><h2 className="font-bold">{(filter !== "all" || query) ? "Konuşma bulunamadı" : "Henüz mesajın yok"}</h2><p className="text-sm leading-relaxed text-ink-soft mt-2">{(filter !== "all" || query) ? "Başka bir arama veya filtre deneyebilirsin." : "Birisi QR etiketin üzerinden yazdığında konuşmanız burada görünecek."}</p>{(filter !== "all" || !!query) && <button className="app-button mt-4" onClick={() => { setFilter("all"); setQuery(""); }}>Filtreleri temizle</button>}</div>}
           </div>
         </aside>
         <section className={`${activeId ? "flex" : "hidden md:flex"} flex-col flex-1 min-w-0 min-h-0 h-full bg-[#F5F1E8]`}>

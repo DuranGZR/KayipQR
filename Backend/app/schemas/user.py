@@ -15,6 +15,7 @@ class UserBase(BaseModel):
 
 # Schema for creating a new user (Registration)
 class UserCreate(BaseModel):
+    redirect_path: Optional[str] = Field(default=None, max_length=512)
     email: EmailStr
     password: str = Field(..., min_length=6, max_length=128, description="En az 6 karakter")
     full_name: Optional[str] = Field(default=None, max_length=255)
@@ -44,6 +45,7 @@ class UserPasswordChange(BaseModel):
 
 # Schema for requesting password reset
 class UserForgotPassword(BaseModel):
+    redirect_path: Optional[str] = Field(default=None, max_length=512)
     email: EmailStr
 
 

@@ -88,7 +88,7 @@ export const CtaSection = () => {
               whileTap={{ scale: 0.96 }}
             >
               <Link
-                href="/register"
+                href="/register?redirect=/studio"
                 className="relative inline-flex items-center justify-center gap-2.5 px-8 py-4 text-[16px] font-bold text-ink active:translate-y-[2px] transition-all"
               >
                 <WobblyButtonFrame fill="#F2B63C" stroke="#33302B" strokeWidth={1.8} />

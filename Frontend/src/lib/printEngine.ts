@@ -1,3 +1,4 @@
+import { qrColorError } from "./qrPolicy";
 import html2canvas from "html2canvas";
 import {
   generateCustomQrSvgString,
@@ -53,7 +54,7 @@ export const downloadSinglePng = async (
   fileName: string = "kayipqr-etiket"
 ) => {
   if (!qrInstance) return;
-  qrInstance.download({
+  await qrInstance.download({
     name: fileName,
     extension: "png",
   });
@@ -67,7 +68,7 @@ export const downloadSingleSvg = async (
   fileName: string = "kayipqr-vektor"
 ) => {
   if (!qrInstance) return;
-  qrInstance.download({
+  await qrInstance.download({
     name: fileName,
     extension: "svg",
   });
@@ -134,6 +135,9 @@ export const downloadA4SheetPng = async (config: StickerPrintConfig) => {
     dotColor: config.dotColor,
     bgColor: config.bgColor,
   });
+
+  const colorError = qrColorError(resolved.fgColor, resolved.bgColor);
+  if (colorError) throw new Error(colorError);
 
   // Render master SVG at 2000px native vector resolution so downsampling to any sticker slot is razor-sharp
   const svgStr = generateCustomQrSvgString({
@@ -364,11 +368,6 @@ export const downloadA4SheetPng = async (config: StickerPrintConfig) => {
 export const printA4Sheet = (config: StickerPrintConfig, customCount?: number) => {
   if (typeof window === "undefined") return;
 
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) {
-    throw new Error("Baskı penceresi engellendi. Tarayıcından açılır pencerelere izin verip tekrar dene.");
-  }
-
   const origin = (process.env.NEXT_PUBLIC_APP_URL || window.location.origin).replace(/\/+$/, "");
   const qrDataUrl = `${origin}/q/${config.uniqueCode}`;
   const preset = config.sizePreset || "mix";
@@ -378,6 +377,14 @@ export const printA4Sheet = (config: StickerPrintConfig, customCount?: number) =
     dotColor: config.dotColor,
     bgColor: config.bgColor,
   });
+
+  const colorError = qrColorError(resolved.fgColor, resolved.bgColor);
+  if (colorError) throw new Error(colorError);
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    throw new Error("Baskı penceresi engellendi. Tarayıcından açılır pencerelere izin verip tekrar dene.");
+  }
 
   // Always generate SVG at 1200px intrinsic vector resolution and scale via CSS width so print/PDF engines never rasterize at low DPI
   const makeSvg = (displayWidthPx: number, includeLabel: boolean = true) => {

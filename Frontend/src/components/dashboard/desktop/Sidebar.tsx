@@ -70,7 +70,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       href: "/studio",
       label: "QR Tasarım Stüdyosu",
-      mobileLabel: "QR Studio",
+      mobileLabel: "QR Stüdyo",
       icon: QrCode,
       badge: null,
       isActive: pathname === "/studio",

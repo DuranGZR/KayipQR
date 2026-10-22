@@ -5,6 +5,9 @@ import { OlderMessages } from "@/components/ui/OlderMessages";
 import { ChatImage } from "@/components/ui/ChatImage";
 
 import React, { useState, useEffect, useRef, Suspense, useCallback } from "react";
+import { usePagedList } from "@/lib/usePagedList";
+import { useResponsiveState } from "@/lib/responsiveState";
+import { useDialog } from "@/lib/useDialog";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -69,25 +72,34 @@ function MessagesContent() {
   const urlConvId = searchParams.get("id");
   const toast = useToast();
 
-  const [conversations, setConversations] = useState<ConversationData[]>([]);
-  const [activeConvId, setActiveConvId] = useState<string | null>(urlConvId);
+
+  const activeConvId = urlConvId;
+  const setActiveConvId = (id: string | null) => router.replace(id ? `/messages?id=${encodeURIComponent(id)}` : "/messages");
   const activeIdRef = useRef(activeConvId);
   activeIdRef.current = activeConvId;
   const [activeConvDetails, setActiveConvDetails] = useState<ConversationDetailData | null>(null);
   const latestChat = useRef(activeConvDetails);
   useEffect(() => { latestChat.current = activeConvDetails; }, [activeConvDetails]);
-  const [isLoadingList, setIsLoadingList] = useState(true);
+
   const [isLoadingDetails, setIsLoadingDetails] = useState(false);
-  const [replyText, setReplyText] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [replyText, setReplyText] = useResponsiveState(`reply:${activeConvId || "none"}`, "");
+  const [isSending, setIsSending] = useResponsiveState(`replybusy:${activeConvId || "none"}`, false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const page = usePagedList(`${statusFilter}:${searchQuery}`, offset => chatApi.list(statusFilter, searchQuery, offset));
+  const { items: conversations, setItems: setConversations, loading: isLoadingList } = page;
+  const [detailError, setDetailError] = useState("");
   const [previewImageModal, setPreviewImageModal] = useState<string | null>(null);
 
+  const imageDialog = useDialog(!!previewImageModal, () => setPreviewImageModal(null));
+
   // Location sharing in owner reply
-  const [ownerLocationNote, setOwnerLocationNote] = useState("");
+  const [replyLocation, setReplyLocation] = useResponsiveState<{lat?: number; lng?: number; address?: string}>(`replylocation:${activeConvId || "none"}`, {});
+  const ownerLocationNote = replyLocation.address || "";
+  const setOwnerLocationNote = (address: string) => setReplyLocation(previous => ({ ...previous, address }));
   const [showLocationBar, setShowLocationBar] = useState(false);
-  const [ownerGpsCoords, setOwnerGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const ownerGpsCoords = typeof replyLocation.lat === "number" && typeof replyLocation.lng === "number" ? { lat: replyLocation.lat, lng: replyLocation.lng } : null;
+  const setOwnerGpsCoords = (coords: { lat: number; lng: number } | null) => setReplyLocation(previous => ({ ...previous, lat: coords?.lat, lng: coords?.lng }));
   const [isGettingGps, setIsGettingGps] = useState(false);
 
   // Real-time WebSocket & Typing states
@@ -110,60 +122,18 @@ function MessagesContent() {
   // Sync deep-linked ?id= param
   useEffect(() => {
     if (urlConvId) {
-      setActiveConvId(urlConvId);
       setMobileView("chat");
     }
   }, [urlConvId]);
 
-  // Load conversations list
-  const loadConversations = useCallback(
-    async (silent = false) => {
-      try {
-        const token = getAuthToken();
-        if (!token) {
-          router.push("/login");
-          return;
-        }
-
-        const list = await chatApi.list("all");
-        setConversations(list);
-
-        // Auto-select first conversation on desktop if none selected
-        if (
-          list.length > 0 &&
-          !activeConvId &&
-          !urlConvId &&
-          typeof window !== "undefined" &&
-          window.innerWidth >= 768
-        ) {
-          setActiveConvId(list[0].id);
-        }
-      } catch (err: any) {
-        if (!silent) console.error("Failed to load conversations:", err);
-        if (
-          err.message?.includes("Oturum") ||
-          err.message?.includes("token") ||
-          err.message?.includes("401")
-        ) {
-          clearAuthTokens();
-          router.push("/login");
-        }
-      } finally {
-        if (!silent) setIsLoadingList(false);
-      }
-    },
-    [activeConvId, urlConvId, router]
-  );
-
-  useEffect(() => {
-    loadConversations(false);
-    return startVisiblePolling(() => loadConversations(true), 30000, false);
-  }, [loadConversations]);
+  const loadConversations = useCallback(async (_silent = false) => { if (!getAuthToken()) { router.replace("/login"); return; } await page.refresh(_silent); }, [router, page.refresh]);
+  useEffect(() => startVisiblePolling(() => loadConversations(true), 30000, false), [loadConversations]);
 
   // Load conversation details when active conversation changes
   const fetchActiveDetails = useCallback(async (convId: string, showSpinner = true) => {
     if (showSpinner) setIsLoadingDetails(true);
     try {
+      setDetailError("");
       const details = await chatApi.getDetails(convId, showSpinner ? null : latestChat.current);
       if (activeIdRef.current !== convId) return;
       const hasNewMessages = details.messages.some(message => !latestChat.current?.messages.some(existing => existing.id === message.id));
@@ -176,7 +146,7 @@ function MessagesContent() {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 80);
     } catch (err) {
-      console.error("Failed to load conversation details:", err);
+      if (activeIdRef.current === convId) setDetailError((err as Error).message);
     } finally {
       if (showSpinner && activeIdRef.current === convId) setIsLoadingDetails(false);
     }
@@ -187,6 +157,7 @@ function MessagesContent() {
       setActiveConvDetails(null);
       return;
     }
+    setActiveConvDetails(null); latestChat.current = null;
     fetchActiveDetails(activeConvId, true);
   }, [activeConvId, fetchActiveDetails]);
 
@@ -465,15 +436,7 @@ function MessagesContent() {
   const resolvedCount = conversations.filter((c) => c.status === "resolved").length;
   const unreadTotal = conversations.reduce((acc, curr) => acc + (curr.unread_count || 0), 0);
 
-  const filteredConversations = conversations.filter((c) => {
-    if (statusFilter !== "all" && c.status !== statusFilter) return false;
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const nameMatch = c.item?.name.toLowerCase().includes(q);
-    const aliasMatch = c.finder_alias?.toLowerCase().includes(q);
-    const msgMatch = c.last_message?.content.toLowerCase().includes(q);
-    return nameMatch || aliasMatch || msgMatch;
-  });
+  const filteredConversations = conversations;
 
 
   return (
@@ -489,6 +452,7 @@ function MessagesContent() {
         transition={{ duration: 0.25 }}
         className="flex-1 min-w-0 p-3 sm:p-5 lg:p-8 flex flex-col justify-start md:h-screen md:overflow-hidden"
       >
+        {detailError && <p role="alert" className="app-error">{detailError}<button className="app-button" onClick={() => activeConvId && fetchActiveDetails(activeConvId)}>Sohbeti yeniden yükle</button></p>}
         {/* Top Header Bar */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 shrink-0">
           <div>
@@ -534,7 +498,7 @@ function MessagesContent() {
                     </span>
                   )}
                   <span className="text-[11px] font-extrabold bg-[#EFE9DC] px-2.5 py-0.5 rounded-full border border-ink/20 text-ink">
-                    {totalCount} Konuşma
+                    Gösterilen: {totalCount} konuşma
                   </span>
                 </div>
               </div>
@@ -550,7 +514,7 @@ function MessagesContent() {
                       : "text-ink-soft hover:text-ink"
                   }`}
                 >
-                  Tümü ({totalCount})
+                  Tümü
                 </button>
                 <button
                   type="button"
@@ -561,7 +525,7 @@ function MessagesContent() {
                       : "text-ink-soft hover:text-ink"
                   }`}
                 >
-                  Aktif ({activeCount})
+                  Aktif
                 </button>
                 <button
                   type="button"
@@ -572,7 +536,7 @@ function MessagesContent() {
                       : "text-ink-soft hover:text-ink"
                   }`}
                 >
-                  Çözüldü ({resolvedCount})
+                  Teslim alındı
                 </button>
               </div>
 
@@ -581,7 +545,7 @@ function MessagesContent() {
                 <Search className="w-3.5 h-3.5 text-ink-soft absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  value={searchQuery}
+                  maxLength={100} value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Eşya adı, bulan kişi veya mesaj ara..."
                   aria-label="Konuşmalarda ara"
@@ -601,9 +565,11 @@ function MessagesContent() {
 
             {/* Conversation List Items */}
             <div className="divide-y divide-ink/10 overflow-y-auto flex-1 min-h-0">
+              {page.error && <p className="app-error" role="alert">{page.error}<button onClick={() => page.refresh()} className="app-button">Yeniden dene</button></p>}
+              {page.hasMore && <button className="app-button w-full" disabled={page.loadingMore} onClick={page.loadMore}>Daha fazla konuşma</button>}
               {isLoadingList ? (
                 <MessageListSkeleton />
-              ) : filteredConversations.length > 0 ? (
+              ) : page.error && conversations.length === 0 ? null : filteredConversations.length > 0 ? (
                 filteredConversations.map((conv) => {
                   const isSelected = activeConvId === conv.id;
                   const isUnread = (conv.unread_count || 0) > 0;
@@ -714,7 +680,7 @@ function MessagesContent() {
                     <p className="text-xs text-ink-soft leading-relaxed">
                       {searchQuery
                         ? "Farklı bir anahtar kelime deneyin."
-                        : "Eşyanızın üzerindeki QR kod birisi tarafından okutulup mesaj yazıldığında anında burada belirecek."}
+                        : "Birisi QR üzerinden mesaj yazdığında konuşma burada görünür. Sayfa açıkken düzenli olarak güncellenir."}
                     </p>
                   </div>
                 </div>
@@ -1226,7 +1192,7 @@ function MessagesContent() {
         {previewImageModal && (
           <div
             onClick={() => setPreviewImageModal(null)}
-            className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-xs"
+            ref={imageDialog} role="dialog" aria-modal="true" aria-label="Fotoğraf önizlemesi" tabIndex={-1} className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4 backdrop-blur-xs"
           >
             <motion.div
               initial={{ opacity: 0, scale: 0.9 }}

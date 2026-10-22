@@ -1,5 +1,9 @@
 "use client";
+import { useStudioDraft } from "@/lib/useStudioDraft";
+import { qrColorError, ITEM_NAME_MAX, OWNER_NAME_MAX, ITEM_NOTE_MAX, QR_LABEL_MAX } from "@/lib/qrPolicy";
 
+import { makePng } from "@/components/dashboard/QrExportPanel";
+import { generateCustomQrSvgString } from "@/components/ui/DynamicQrRenderer";
 import React, { useState, useRef, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -89,37 +93,28 @@ function StudioContent() {
   const searchParams = useSearchParams();
   const editItemId = searchParams?.get("edit") || searchParams?.get("id");
 
-  const [savedItemId, setSavedItemId] = useState<string | null>(editItemId || null);
+  const draft = useStudioDraft(editItemId);
   const [isLoadingItem, setIsLoadingItem] = useState(false);
-  const [existingQrCode, setExistingQrCode] = useState<string>("");
-
-  const [itemName, setItemName] = useState("");
-  const [itemCategory, setItemCategory] = useState("Kişisel Eşya");
-  const [finderNote, setFinderNote] = useState("");
-  const [ownerName, setOwnerName] = useState("");
-  const [showNameToFinder, setShowNameToFinder] = useState<boolean>(true);
-  const [showDescToFinder, setShowDescToFinder] = useState<boolean>(true);
-
-  // 8 Custom QR Designs State
-  const [selectedDesign, setSelectedDesign] = useState<CustomQrDesignPreset>(
-    CUSTOM_QR_DESIGNS[0]
-  );
-  // Single text input ("BENİ TARA" or custom or empty)
-  const [frameText, setFrameText] = useState<string>("BENİ TARA");
-
-  // Color state initialized from the selected design
-  const [customQrColor, setCustomQrColor] = useState<string>(
-    CUSTOM_QR_DESIGNS[0].fgColor
-  );
-  const [customCardBg, setCustomCardBg] = useState<string>(
-    CUSTOM_QR_DESIGNS[0].bgColor
-  );
-
+  const savedItemId = draft.item?.id || editItemId;
+  const existingQrCode = draft.item?.qr_code?.unique_code || "";
+  const [itemName, setItemName] = draft.field("name");
+  const [itemCategory, setItemCategory] = draft.field("category");
+  const [finderNote, setFinderNote] = draft.field("note");
+  const [ownerName, setOwnerName] = draft.field("owner");
+  const [showNameToFinder, setShowNameToFinder] = draft.field("showName");
+  const [showDescToFinder, setShowDescToFinder] = draft.field("showNote");
+  const selectedDesign = CUSTOM_QR_DESIGNS.find(design => design.id === draft.form.design) || CUSTOM_QR_DESIGNS[0];
+  const setSelectedDesign = (design: CustomQrDesignPreset) => draft.setForm(previous => ({ ...previous, design: design.id }));
+  const [frameText, setFrameText] = draft.field("label");
+  const [customQrColor, setCustomQrColor] = draft.field("foreground");
+  const [customCardBg, setCustomCardBg] = draft.field("background");
+  const saveLock = useRef(false);
   const [printPreset, setPrintPreset] = useState<
     "standard" | "nano" | "luggage" | "round" | "mix"
   >("mix");
 
-  const [isSaving, setIsSaving] = useState(false);
+  const isSaving = draft.saving;
+  const setIsSaving = draft.setSaving;
   const [errorMessage, setErrorMessage] = useState("");
   const [mobileStudioTab, setMobileStudioTab] = useState<
     "design" | "preview" | "export"
@@ -136,14 +131,16 @@ function StudioContent() {
       return;
     }
 
-    if (!editItemId) return;
+    if (!editItemId || draft.item?.id === editItemId) return;
+    let cancelled = false;
 
     const loadItem = async () => {
       setIsLoadingItem(true);
       setErrorMessage("");
       try {
         const item = await itemsApi.get(editItemId);
-        setSavedItemId(item.id);
+        if (cancelled) return;
+        draft.setItem(item);
         setItemName(decodeHtmlEntities(item.name));
         setItemCategory(decodeHtmlEntities(item.category) || "Kişisel Eşya");
         setOwnerName(decodeHtmlEntities(item.owner_display_name));
@@ -152,7 +149,7 @@ function StudioContent() {
         setShowDescToFinder(item.show_desc_to_finder ?? true);
 
         if (item.qr_code) {
-          setExistingQrCode(item.qr_code.unique_code);
+
 
           let parsedCfg: any = {};
           try {
@@ -192,14 +189,14 @@ function StudioContent() {
           );
         }
       } catch (err: any) {
-        console.error("Failed to load item for edit:", err);
-        setErrorMessage("Düzenlenecek eşya yüklenemedi.");
+        if (!cancelled) setErrorMessage(err.message || "Düzenlenecek eşya yüklenemedi.");
       } finally {
-        setIsLoadingItem(false);
+        if (!cancelled) setIsLoadingItem(false);
       }
     };
 
     loadItem();
+    return () => { cancelled = true; };
   }, [editItemId, router]);
 
   const handleSelectDesign = (design: CustomQrDesignPreset) => {
@@ -222,10 +219,12 @@ function StudioContent() {
 
   // Ensures the item is saved in DB and has a real unique_code before downloading/printing
   const ensureSavedQrCode = async (): Promise<string | null> => {
-    const effectiveName = itemName.trim() || "Kişisel Eşyam";
-    if (!itemName.trim()) {
-      setItemName(effectiveName);
-    }
+    if (saveLock.current || isSaving || isLoadingItem || (editItemId && draft.item?.id !== editItemId)) return null;
+    const effectiveName = itemName.trim();
+    if (!effectiveName) { setErrorMessage("Eşyan için bir isim yaz."); document.getElementById("studio-item-name")?.focus(); return null; }
+    const colorError = qrColorError(customQrColor, customCardBg);
+    if (colorError) { setErrorMessage(colorError); return null; }
+    saveLock.current = true;
 
     setIsSaving(true);
     setErrorMessage("");
@@ -233,9 +232,9 @@ function StudioContent() {
       const payload = {
         name: effectiveName,
         category: itemCategory || "Kişisel Eşya",
-        description: finderNote.trim() || undefined,
+        description: finderNote.trim(),
         reward_text: "",
-        owner_display_name: ownerName.trim() || undefined,
+        owner_display_name: ownerName.trim(),
         show_name_to_finder: showNameToFinder,
         show_desc_to_finder: showDescToFinder,
         qr_color_dark: activeQrColor,
@@ -248,16 +247,15 @@ function StudioContent() {
       if (savedItemId) {
         const updated = await itemsApi.update(savedItemId, payload);
         const code = updated.qr_code?.unique_code || existingQrCode;
-        if (code) setExistingQrCode(code);
+        draft.setItem(updated);
         return code;
       } else {
         const created = await itemsApi.create(payload);
-        setSavedItemId(created.id);
+        draft.setItem(created);
         const code = created.qr_code?.unique_code || "";
         if (code) {
-          setExistingQrCode(code);
-          // Wait one tick for DynamicQrRenderer to re-render with the real unique_code
-          await new Promise((r) => setTimeout(r, 120));
+
+
         }
         return code;
       }
@@ -265,52 +263,21 @@ function StudioContent() {
       setErrorMessage(err.message || "QR kod oluşturulurken hata oluştu.");
       return null;
     } finally {
+      saveLock.current = false;
       setIsSaving(false);
     }
   };
 
   const handleSaveAndRedirect = async () => {
-    if (!itemName.trim()) {
-      setErrorMessage("Lütfen eşyanıza bir isim verin (Örn: MacBook Air M2)");
-      return;
-    }
-
-    setIsSaving(true);
-    setErrorMessage("");
-
-    try {
-      const payload = {
-        name: itemName.trim(),
-        category: itemCategory || "Kişisel Eşya",
-        description: finderNote.trim() || undefined,
-        reward_text: "",
-        owner_display_name: ownerName.trim() || undefined,
-        show_name_to_finder: showNameToFinder,
-        show_desc_to_finder: showDescToFinder,
-        qr_color_dark: activeQrColor,
-        qr_color_light: activeCardBg,
-        qr_pattern_style: selectedDesign.id,
-        qr_frame_type: selectedDesign.id,
-        qr_frame_text: frameText,
-      };
-
-      if (savedItemId) {
-        await itemsApi.update(savedItemId, payload);
-      } else {
-        await itemsApi.create(payload);
-      }
-
-      router.push("/dashboard");
-    } catch (err: any) {
-      setErrorMessage(err.message || "Eşya kaydedilirken hata oluştu.");
-      setIsSaving(false);
-    }
+    const code = await ensureSavedQrCode();
+    if (code) router.push("/dashboard");
   };
 
   const handleDownloadFullCard = async () => {
     const realCode = await ensureSavedQrCode();
     if (!realCode || !stickerCardRef.current) return;
     setIsExportingCard(true);
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     try {
       await downloadFullCardPng(
         stickerCardRef.current,
@@ -321,27 +288,18 @@ function StudioContent() {
     }
   };
 
-  const handleDownloadPng = async () => {
+  const downloadSaved = async (extension: "svg" | "png") => {
     const realCode = await ensureSavedQrCode();
     if (!realCode) return;
-    if (qrInstanceRef.current) {
-      downloadSinglePng(
-        qrInstanceRef.current,
-        `kayipqr-${itemName || "etiket"}-${selectedDesign.id}`
-      );
-    }
+    try {
+      const svg = generateCustomQrSvgString({ data: `${appBaseUrl}/q/${realCode}`, size: 2000, designId: selectedDesign.id, dotColor: activeQrColor, bgColor: activeCardBg, labelText: frameText });
+      const blob = extension === "png" ? await makePng(svg) : new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob); const link = document.createElement("a");
+      link.href = url; link.download = `kayipqr-${realCode}.${extension}`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) { setErrorMessage((cause as Error).message); }
   };
-
-  const handleDownloadSvg = async () => {
-    const realCode = await ensureSavedQrCode();
-    if (!realCode) return;
-    if (qrInstanceRef.current) {
-      downloadSingleSvg(
-        qrInstanceRef.current,
-        `kayipqr-${itemName || "etiket"}-${selectedDesign.id}`
-      );
-    }
-  };
+  const handleDownloadPng = () => downloadSaved("png");
+  const handleDownloadSvg = () => downloadSaved("svg");
 
   const [showA4Options, setShowA4Options] = useState(false);
   const [isDownloadingA4, setIsDownloadingA4] = useState(false);
@@ -404,11 +362,11 @@ function StudioContent() {
               <span className="text-[11px] font-bold bg-gold/40 px-2.5 py-0.5 rounded-full border border-ink/20 text-ink">
                 {editItemId
                   ? `Düzenleme: #${existingQrCode}`
-                  : "8 Özel Organik & Minimal QR Serisi"}
+                  : "8 etiket tasarımı"}
               </span>
             </h1>
             <p className="text-xs sm:text-sm text-ink-soft mt-1">
-              Klasik barkod görünümünden uzak, her eşyaya yapıştırmak isteyeceğiniz sade ve ikonik 8 özel QR tasarımı.
+              Eşyanı ekle, tasarımını seç ve etiketini indir. İndirme işlemi bilgilerini de kaydeder.
             </p>
           </div>
 
@@ -423,7 +381,7 @@ function StudioContent() {
               whileHover={{ scale: 1.03 }}
               whileTap={{ scale: 0.97 }}
               onClick={handleSaveAndRedirect}
-              disabled={isSaving || isLoadingItem}
+              disabled={isSaving || isLoadingItem || !!qrColorError(customQrColor, customCardBg)}
               className="relative inline-flex items-center gap-1.5 bg-gold hover:bg-gold-dark text-ink font-bold text-xs rounded-[10px] px-5 py-2.5 shadow-[0_2px_0px_#33302B] active:translate-y-[1px] transition-all cursor-pointer disabled:opacity-75"
             >
               <WobblyButtonFrame stroke="#33302B" strokeWidth={1.4} />
@@ -433,7 +391,7 @@ function StudioContent() {
                   ? "Kaydediliyor..."
                   : editItemId
                   ? "Değişiklikleri Güncelle"
-                  : "Kaydet & Dashboard'a Ekle"}
+                  : "Kaydet ve eşyalarıma ekle"}
               </span>
             </motion.button>
           </div>
@@ -499,11 +457,11 @@ function StudioContent() {
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-gold-dark" />
                     <h3 className="font-bold text-base text-ink">
-                      1. Özel QR Tasarımını Seç (8 İkonik Stil)
+                      1. Tasarımını seç
                     </h3>
                   </div>
                   <span className="text-[11px] font-bold bg-gold/30 text-ink px-2.5 py-0.5 rounded-full border border-ink/15">
-                    Sade & Farklı Koleksiyon
+                    8 tasarım
                   </span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
@@ -544,11 +502,9 @@ function StudioContent() {
                             )}
                           </div>
                           <span className="inline-block text-[10px] font-bold text-ink-soft bg-paper-hover px-2 py-0.5 rounded-md border border-ink/10 mt-1">
-                            {design.badge}
+                            {design.shape === "circle" ? "Yuvarlak etiket" : "Köşeli etiket"}
                           </span>
-                          <p className="text-[10.5px] text-ink-soft leading-snug mt-1 line-clamp-2">
-                            {design.desc}
-                          </p>
+
                         </div>
                       </button>
                     );
@@ -564,26 +520,26 @@ function StudioContent() {
                   <div className="flex items-center gap-2">
                     <Type className="w-4 h-4 text-gold-dark" />
                     <h3 className="font-bold text-base text-ink">
-                      2. QR Üzerindeki Tek Yazı & Renk Ayarı
+                      2. Yazı ve renkler
                     </h3>
                   </div>
                   <span className="text-[11px] font-bold text-ink-soft">
-                    Minimalist Tek Satır
+                    İsteğe bağlı
                   </span>
                 </div>
                 {/* Single Text Input */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
+                    <label htmlFor="studiopage-field-0" className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
                       Etiket Yazısı (İsteğe Bağlı Tek Satır)
                     </label>
                     <span className="text-[10.5px] font-mono text-ink-soft">
                       {frameText.length}/22
                     </span>
                   </div>
-                  <input
+                  <input id="studiopage-field-0"
                     type="text"
-                    maxLength={22}
+                    maxLength={QR_LABEL_MAX}
                     value={frameText}
                     onChange={(e) => setFrameText(e.target.value)}
                     placeholder="Örn: BENİ TARA (Boş bırakırsanız sadece QR görünür)"
@@ -613,6 +569,7 @@ function StudioContent() {
                     })}
                   </div>
                 </div>
+                {qrColorError(customQrColor, customCardBg) && <p role="alert" className="app-error">{qrColorError(customQrColor, customCardBg)}</p>}
                 {/* Optional Color Fine-Tuning */}
                 <div className="pt-4 border-t border-ink/10">
                   <div className="flex items-center justify-between mb-2.5">
@@ -637,13 +594,13 @@ function StudioContent() {
                       </label>
                       <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-ink/20">
                         <input
-                          type="color"
+                          type="color" aria-label="QR rengi seç"
                           value={activeQrColor}
                           onChange={(e) => setCustomQrColor(e.target.value)}
                           className="w-7 h-7 rounded-lg border border-ink/20 cursor-pointer"
                         />
                         <input
-                          type="text"
+                          type="text" aria-label="QR rengi HEX kodu" maxLength={7}
                           value={activeQrColor}
                           onChange={(e) => setCustomQrColor(e.target.value)}
                           className="w-full text-xs font-mono font-bold text-ink bg-transparent focus:outline-none"
@@ -658,13 +615,13 @@ function StudioContent() {
                       </label>
                       <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-ink/20">
                         <input
-                          type="color"
+                          type="color" aria-label="Zemin rengi seç"
                           value={activeCardBg}
                           onChange={(e) => setCustomCardBg(e.target.value)}
                           className="w-7 h-7 rounded-lg border border-ink/20 cursor-pointer"
                         />
                         <input
-                          type="text"
+                          type="text" aria-label="Zemin rengi HEX kodu" maxLength={7}
                           value={activeCardBg}
                           onChange={(e) => setCustomCardBg(e.target.value)}
                           className="w-full text-xs font-mono font-bold text-ink bg-transparent focus:outline-none"
@@ -721,16 +678,16 @@ function StudioContent() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
+                        <label htmlFor="studio-item-name" className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
                           Eşya Adı
                         </label>
                         <span className="text-[10.5px] font-mono text-ink-soft">
-                          {itemName.length}/24
+                          {itemName.length}/{ITEM_NAME_MAX}
                         </span>
                       </div>
                       <input
                         type="text"
-                        maxLength={24}
+                        id="studio-item-name" maxLength={ITEM_NAME_MAX}
                         value={itemName}
                         onChange={(e) => setItemName(e.target.value)}
                         placeholder="Örn: MacBook Pro, Sırt Çantası, Anahtarlık..."
@@ -739,16 +696,16 @@ function StudioContent() {
                     </div>
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
+                        <label htmlFor="studiopage-field-6" className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
                           Eşya Sahibi Adı (İsteğe Bağlı)
                         </label>
                         <span className="text-[10px] font-mono text-ink-soft">
-                          {ownerName.length}/16
+                          {ownerName.length}/{OWNER_NAME_MAX}
                         </span>
                       </div>
-                      <input
+                      <input id="studiopage-field-6"
                         type="text"
-                        maxLength={16}
+                        maxLength={OWNER_NAME_MAX}
                         value={ownerName}
                         onChange={(e) => setOwnerName(e.target.value)}
                         placeholder="Örn: Ahmet Y. (Boş bırakılabilir)"
@@ -758,16 +715,16 @@ function StudioContent() {
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
+                      <label htmlFor="studiopage-field-7" className="block text-xs font-bold uppercase tracking-wider text-ink-soft">
                         Bulan Kişiye Not (İsteğe Bağlı)
                       </label>
                       <span className="text-[10px] font-mono text-ink-soft">
-                        {finderNote.length}/80
+                        {finderNote.length}/{ITEM_NOTE_MAX}
                       </span>
                     </div>
-                    <input
+                    <input id="studiopage-field-7"
                       type="text"
-                      maxLength={80}
+                      maxLength={ITEM_NOTE_MAX}
                       value={finderNote}
                       onChange={(e) => setFinderNote(e.target.value)}
                       placeholder="Örn: Eşyamı bulduysanız lütfen buradan mesaj veya konum bırakın."
@@ -818,7 +775,7 @@ function StudioContent() {
                     <span>{selectedDesign.name}</span>
                   </span>
                   <span className="text-[10.5px] font-bold bg-gold/30 text-ink px-2.5 py-0.5 rounded-full border border-ink/15">
-                    {selectedDesign.badge}
+                    {selectedDesign.shape === "circle" ? "Yuvarlak etiket" : "Köşeli etiket"}
                   </span>
                 </div>
                 {/* Contrast Readability Indicator */}
@@ -838,7 +795,7 @@ function StudioContent() {
                   <div className="flex items-center gap-2 p-2 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-[11px] font-bold">
                     <Check className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
                     <span>
-                      ✓ Yüksek Kamera Okunabilirliği ({contrastRatio.toFixed(1)}:1 Kontrast)
+                      ✓ Renkler Yeterince Farklı ({contrastRatio.toFixed(1)}:1 Kontrast)
                     </span>
                   </div>
                 )}
@@ -865,6 +822,7 @@ function StudioContent() {
                   {/* 1. Primary Button: Download QR Image (PNG) */}
                   <button
                     type="button"
+                    disabled={isSaving || !!qrColorError(customQrColor, customCardBg)}
                     onClick={handleDownloadPng}
                     className="w-full py-3 px-4 rounded-xl bg-gold hover:bg-gold-dark text-ink font-extrabold text-xs border border-ink shadow-[0_2px_0px_#33302B] active:translate-y-[1px] flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
@@ -891,10 +849,10 @@ function StudioContent() {
                   {showA4Options && (
                     <div className="p-3 bg-white rounded-xl border border-ink/15 space-y-3">
                       <div>
-                        <label className="block text-[11px] font-bold text-ink mb-2">
+                        <label htmlFor="studiopage-field-10" className="block text-[11px] font-bold text-ink mb-2">
                           1. A4 Sayfa Boyut Düzenini Seçin:
                         </label>
-                        <select className="w-full px-3 py-2.5 rounded-xl bg-paper-card border border-ink/20 text-xs font-bold"
+                        <select id="studiopage-field-10" className="w-full px-3 py-2.5 rounded-xl bg-paper-card border border-ink/20 text-xs font-bold"
                           value={printPreset}
                           onChange={(e: any) => setPrintPreset(e.target.value)}
                         >
@@ -918,7 +876,7 @@ function StudioContent() {
                       <div className="grid grid-cols-2 gap-2">
                         <button className="py-2.5 px-3 rounded-xl bg-gold text-ink font-bold text-xs border border-ink shadow-xs flex items-center justify-center gap-2"
                           type="button"
-                          onClick={handlePrintA4}
+                          disabled={isSaving || !!qrColorError(customQrColor, customCardBg)} onClick={handlePrintA4}
                         >
                           <Printer className="w-4 h-4" />
                           <span>Doğrudan Yazıcıya Gönder</span>
@@ -927,7 +885,7 @@ function StudioContent() {
                           type="button"
                           onClick={handleDownloadA4Png}
                           className="py-2.5 px-3 rounded-xl bg-white text-ink font-bold text-xs border border-ink/25 shadow-xs flex items-center justify-center gap-2"
-                          disabled={isDownloadingA4}
+                          disabled={isDownloadingA4 || isSaving || !!qrColorError(customQrColor, customCardBg)}
                         >
                           <Download  />
                           <span>
@@ -948,7 +906,7 @@ function StudioContent() {
                       Matbaa veya lazer kazıma için{" "}
                       <button
                         type="button"
-                        onClick={handleDownloadSvg}
+                        disabled={isSaving || !!qrColorError(customQrColor, customCardBg)} onClick={handleDownloadSvg}
                         className="font-bold text-gold-dark underline hover:text-ink"
                       >
                         SVG indir
@@ -959,7 +917,7 @@ function StudioContent() {
                       type="button"
                       onClick={handleDownloadFullCard}
                       className="font-bold text-ink-soft underline hover:text-ink"
-                      disabled={isExportingCard}
+                      disabled={isExportingCard || isSaving || !!qrColorError(customQrColor, customCardBg)}
                     >
                       {isExportingCard ? "Hazırlanıyor..." : "Kart Görselini İndir"}
                     </button>
@@ -967,7 +925,7 @@ function StudioContent() {
                 </div>
                 <button
                   onClick={handleSaveAndRedirect}
-                  disabled={isSaving || isLoadingItem}
+                  disabled={isSaving || isLoadingItem || !!qrColorError(customQrColor, customCardBg)}
                   className="w-full py-3.5 px-4 rounded-[10px] bg-paper-hover hover:bg-gold text-ink font-bold text-xs border border-ink/30 shadow-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
                 >
                   <Check className="w-4 h-4" />
@@ -976,7 +934,7 @@ function StudioContent() {
                       ? "Kaydediliyor..."
                       : editItemId
                       ? "Değişiklikleri Güncelle"
-                      : "Kaydet & Dashboard'a Ekle"}
+                      : "Kaydet ve eşyalarıma ekle"}
                   </span>
                 </button>
               </div>
@@ -1020,7 +978,7 @@ function StudioContent() {
           <button
             type="button"
             onClick={handleSaveAndRedirect}
-            disabled={isSaving || isLoadingItem}
+            disabled={isSaving || isLoadingItem || !!qrColorError(customQrColor, customCardBg)}
             className="py-2 px-4 rounded-xl bg-gold hover:bg-gold-dark text-ink font-extrabold text-xs shadow-xs active:scale-95 transition-transform flex items-center gap-1.5 shrink-0 disabled:opacity-50 cursor-pointer"
           >
             {isSaving ? (

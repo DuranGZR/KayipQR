@@ -1,15 +1,17 @@
 import json
 from typing import Any, Dict, List, Optional
-from sqlalchemy import func, select
+from sqlalchemy import func, select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from app.models.item import Item
+from app.models.qr_code import QRCode
 from app.models.qr_scan import QRScan
 from app.models.conversation import Conversation
 from app.models.message import Message
 from app.schemas.item import ItemCreate, ItemUpdate, ItemResponse
 from app.services.qr_service import qr_service, DEFAULT_PRESET_COLORS
 from app.core.media import validate_attachments
+from app.core.qr_policy import validate_qr_colors
 
 
 class ItemService:
@@ -146,14 +148,16 @@ class ItemService:
             select(Item)
             .where(Item.user_id == user_id)
             .options(selectinload(Item.qr_code))
-            .order_by(Item.created_at.desc())
+            .order_by(Item.created_at.desc(), Item.id.desc())
         )
 
         if status_filter and status_filter.lower() != "all":
             query = query.where(Item.status == status_filter.lower())
 
         if search_query:
-            query = query.where(Item.name.ilike(f"%{search_query}%"))
+            term = "%" + search_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            query = query.where(or_(Item.name.ilike(term, escape="\\"), Item.category.ilike(term, escape="\\"),
+                Item.qr_code.has(QRCode.unique_code.ilike(term, escape="\\"))))
 
         if limit is not None:
             query = query.limit(limit).offset(offset)
@@ -241,6 +245,7 @@ class ItemService:
                 cfg["label_text"] = qr_fields["qr_frame_text"]
                 cfg["show_label"] = bool(qr_fields["qr_frame_text"])
 
+            validate_qr_colors(cfg["color_dark"], cfg["color_light"])
             item.qr_code.design_config = json.dumps(cfg)
             db.add(item.qr_code)
 

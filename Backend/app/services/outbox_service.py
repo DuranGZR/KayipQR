@@ -16,14 +16,15 @@ def queue_email(db, recipient: str, subject: str, html_body: str) -> None:
     db.add(EmailOutbox(recipient=recipient, subject=subject[:255], html_body=html_body))
 
 
-async def queue_auth_email(db, user, purpose: str) -> None:
+async def queue_auth_email(db, user, purpose: str, redirect_path: str | None = None) -> None:
+    from app.core.navigation import safe_return_path
     # Supersede undelivered requests. Old links are not sent long after a newer request.
     await db.execute(update(EmailOutbox).where(EmailOutbox.recipient == user.email,
         EmailOutbox.purpose == purpose, EmailOutbox.status.in_(["pending", "processing"]))
         .values(status="failed", html_body="", lease_token=None, locked_until=None))
     db.add(EmailOutbox(recipient=user.email, subject="KayıpQR — " + (
         "E-posta adresini doğrula" if purpose == "verify_email" else "Şifre Sıfırlama Talebi"),
-        html_body="", purpose=purpose, auth_fingerprint=hashlib.sha256(user.hashed_password.encode()).hexdigest(),
+        html_body="", purpose=purpose, redirect_path=safe_return_path(redirect_path), auth_fingerprint=hashlib.sha256(user.hashed_password.encode()).hexdigest(),
         expires_at=datetime.now(timezone.utc) + timedelta(minutes=15)))
 
 
@@ -47,7 +48,10 @@ async def prepare_auth_email(mail) -> bool:
             else:
                 import html
                 token = create_email_verification_token(user)
-                link = html.escape(f"{settings.PUBLIC_APP_URL}/verify-email?token={token}", quote=True)
+                from urllib.parse import urlencode
+                from app.core.navigation import safe_return_path
+                query = urlencode({"token": token, "redirect": safe_return_path(mail.redirect_path)})
+                link = html.escape(f"{settings.PUBLIC_APP_URL}/verify-email?{query}", quote=True)
                 mail.html_body = email_service._get_base_template("E-posta adresini doğrula", "KayıpQR hesabını etkinleştir",
                     f'<h2>E-posta adresini doğrula</h2><p>Hesabını kullanmak için aşağıdaki bağlantıya tıkla. Bağlantı 24 saat geçerlidir. Bu hesabı sen oluşturmadıysan bu e-postayı yok sayabilirsin.</p><a class="btn" href="{link}">Adresimi doğrula</a>')
                 mail.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=24)

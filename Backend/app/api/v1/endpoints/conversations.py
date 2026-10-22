@@ -58,12 +58,13 @@ async def list_conversations(
     status: Optional[str] = Query(None, description="Filtre: all, active, closed, blocked, resolved"),
     limit: int = Query(100, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    search: Optional[str] = Query(None, max_length=100),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Eşya sahibine ait tüm konuşmaları listeler."""
     return await chat_service.get_conversations_for_owner(
-        db=db, user_id=current_user.id, status_filter=status, limit=limit, offset=offset
+        db=db, user_id=current_user.id, status_filter=status, limit=limit, offset=offset, search_query=search
     )
 
 

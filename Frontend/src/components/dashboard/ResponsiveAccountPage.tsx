@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactNode, useSyncExternalStore } from "react";
+import { ResponsiveDraftProvider } from "@/lib/responsiveState";
 
 const desktopQuery = "(min-width: 768px)";
 const subscribe = (notify: () => void) => {
@@ -15,5 +16,5 @@ const getServerSnapshot = () => null;
 export function ResponsiveAccountPage({ desktop, mobile }: { desktop: ReactNode; mobile: ReactNode }) {
   const isDesktop = useSyncExternalStore<boolean | null>(subscribe, getSnapshot, getServerSnapshot);
   if (isDesktop === null) return <div className="min-h-screen dot-grid-pattern flex items-center justify-center"><p role="status" className="text-sm text-ink-soft">Yükleniyor…</p></div>;
-  return isDesktop ? desktop : mobile;
+  return <ResponsiveDraftProvider>{isDesktop ? desktop : mobile}</ResponsiveDraftProvider>;
 }

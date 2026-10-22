@@ -1,4 +1,5 @@
 "use client";
+import { safeReturnPath } from "@/lib/navigation";
 import { GoogleSignIn } from "@/components/auth/GoogleSignIn";
 
 import React, { useState, useEffect } from "react";
@@ -66,7 +67,7 @@ export default function LoginPage() {
 
       const params = new URLSearchParams(window.location.search);
       const redirect = params.get("redirect");
-      router.push(redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/dashboard");
+      router.push(safeReturnPath(redirect));
     } catch (err: any) {
       setErrorMessage(err.message || "E-posta veya şifre hatalı. Lütfen tekrar deneyin.");
     } finally {
@@ -149,7 +150,7 @@ export default function LoginPage() {
             <AnimatePresence>
               {errorMessage && (
                 <motion.div
-                  key="error"
+                  key="error" role="alert" id="auth-form-error"
                   variants={shakeAnimation}
                   initial="hidden"
                   animate="visible"
@@ -169,14 +170,14 @@ export default function LoginPage() {
               
               {/* Email Field */}
               <motion.div variants={fadeInUp}>
-                <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
+                <label htmlFor="login-email" className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5" /> E-posta Adresi
                 </label>
                 <div className="relative">
                   <input
                     type="email"
                     required
-                    value={email}
+                    id="login-email" name="email" aria-describedby={errorMessage ? "auth-form-error" : undefined} autoComplete="email" maxLength={255} value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="ornek@kayipqr.com"
                     className="w-full px-3.5 py-3 bg-white rounded-[10px] border-[1.5px] border-ink text-ink font-medium text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-gold transition-all"
@@ -187,7 +188,7 @@ export default function LoginPage() {
               {/* Password Field */}
               <motion.div variants={fadeInUp}>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft flex items-center gap-1.5">
+                  <label htmlFor="login-password" className="block text-xs font-bold uppercase tracking-wider text-ink-soft flex items-center gap-1.5">
                     <Lock className="w-3.5 h-3.5" /> Şifre
                   </label>
                   <Link
@@ -201,15 +202,17 @@ export default function LoginPage() {
                   <input
                     type={showPassword ? "text" : "password"}
                     required
-                    value={password}
+                    id="login-password" name="password" aria-describedby={errorMessage ? "auth-form-error" : undefined} autoComplete="current-password" maxLength={128} value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
                     className="w-full pl-3.5 pr-10 py-3 bg-white rounded-[10px] border-[1.5px] border-ink text-ink font-medium text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-gold transition-all"
                   />
                   <button
                     type="button"
+                    aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
+                    aria-pressed={showPassword}
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-soft hover:text-ink transition-colors p-1"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-soft hover:text-ink transition-colors p-2 min-w-10 min-h-10"
                   >
                     {showPassword ? (
                       <EyeOff className="w-4 h-4" />

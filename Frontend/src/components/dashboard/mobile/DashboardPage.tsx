@@ -1,5 +1,6 @@
 "use client";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { usePagedList } from "@/lib/usePagedList";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Plus, Search, ArrowUpRight, MoreHorizontal, Package, MessageCircle, Download, Pencil, Flag, Bell, X, ChevronRight, Loader2 } from "lucide-react";
@@ -14,31 +15,26 @@ import { decodeHtmlEntities } from "@/lib/utils";
 
 function Dashboard() {
   const router = useRouter(); const search = useSearchParams(); const toast = useToast();
-  const [items, setItems] = useState<ItemData[]>([]);
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+
+
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
-  const [showAll, setShowAll] = useState(false);
-  useEffect(() => { setShowAll(false); }, [filter, query]);
+  const page = usePagedList(`${filter}:${query}`, offset => itemsApi.list(filter, query, offset));
+  const { items, setItems, loading: loading, error } = page;
+
   const [menu, setMenu] = useState<ItemData | null>(null);
   const [statusItem, setStatusItem] = useState<ItemData | null>(null);
   const [exportItem, setExportItem] = useState<ItemData | null>(null);
   const [busy, setBusy] = useState(false);
   const [showPermission, setShowPermission] = useState(false);
-  const load = useCallback(async () => {
-    if (!getAuthToken()) { router.replace("/login"); return; }
-    setLoading(true); setError("");
-    try { const [next, summary] = await Promise.all([itemsApi.list(), itemsApi.getStats().catch(() => null)]); setItems(next); setStats(summary); }
-    catch (cause) { setError((cause as Error).message); if (!getAuthToken()) router.replace("/login"); }
-    finally { setLoading(false); }
-  }, [router]);
-  useEffect(() => { load(); setShowPermission("Notification" in window && Notification.permission === "default" && sessionStorage.getItem("kq_notification_dismissed") !== "yes"); }, [load]);
+  const load = async () => { await page.refresh(); try { setStats(await itemsApi.getStats()); } catch { setStats(null); } };
+  useEffect(() => { if (!getAuthToken()) { router.replace("/login"); return; } itemsApi.getStats().then(setStats).catch(() => setStats(null)); setShowPermission("Notification" in window && Notification.permission === "default" && sessionStorage.getItem("kq_notification_dismissed") !== "yes"); }, [router]);
   useEffect(() => { const itemId = search.get("item"); if (itemId) router.replace(`/dashboard/${encodeURIComponent(itemId)}`); }, [search, router]);
-  const matches = items.filter(item => (filter === "all" || item.status === filter) && [item.name, item.category, item.qr_code?.unique_code].some(value => decodeHtmlEntities(value).toLocaleLowerCase("tr-TR").includes(query.toLocaleLowerCase("tr-TR"))));
-  const visibleItems = showAll ? matches : matches.slice(0, 6);
-  const lost = items.filter(item => item.status === "lost").length;
+  const matches = items;
+  const visibleItems = items;
+  const lost = stats?.lost_items ?? "—";
   const changeStatus = async (status: ItemData["status"]) => {
     if (!statusItem || busy) return; setBusy(true);
     try { const updated = await itemsApi.updateStatus(statusItem.id, status); setItems(previous => previous.map(item => item.id === updated.id ? updated : item)); setStatusItem(null); toast.success("Eşya durumu güncellendi."); }
@@ -48,9 +44,9 @@ function Dashboard() {
     <Sidebar itemsCount={items.length} unreadCount={stats?.unread_messages || 0} />
     <main className="app-main">
       <header className="flex items-center justify-between gap-3 mb-6"><div><p className="app-eyebrow mb-2">HER ŞEY YERLİ YERİNDE</p><h1 className="text-[29px] md:text-3xl font-extrabold tracking-tight">Eşyalarım<span className="text-[#1E7E75]">.</span></h1></div><Link className="app-button app-button-primary !px-4" href="/studio"><Plus size={19} /><span>Ekle</span></Link></header>
-      <div className="app-card !px-5 !py-5 flex items-center gap-4 text-sm mb-6"><span className="flex gap-2 items-center font-bold"><Package size={18} />{items.length} eşya</span><span className="w-px h-5 bg-ink/15" /><span className={lost ? "text-[#a24a23] font-bold" : "text-ink-soft"}>{lost} kayıp</span><Link href="/messages" className="ml-auto text-[#1E7E75] font-bold flex items-center gap-1">{stats?.unread_messages ? `${stats.unread_messages} yeni` : "Mesajlar"}<ChevronRight size={16} /></Link></div>
-      <div className="flex flex-col lg:flex-row gap-3 mb-5"><div className="relative flex-1"><Search size={20} className="absolute left-4 top-4 text-ink/40" /><input className="app-input !pl-12 bg-paper-card" aria-label="Eşyalarında ara" placeholder="Eşyalarında ara…" value={query} onChange={event => setQuery(event.target.value)} /></div><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 lg:pb-0">{[["all", "Tümü"], ["safe", "Güvende"], ["lost", "Kayıp"], ["resolved", "Teslim alındı"]].map(([key, label]) => <button key={key} className="app-chip" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}</div></div>
-      {error ? <div className="app-card text-center py-10"><p role="alert" className="text-rose-700 mb-5">{error}</p><button className="app-button" onClick={load}>Yeniden dene</button></div> : loading ? <div className="grid grid-cols-2 gap-3" role="status" aria-label="Eşyalar yükleniyor">{[0, 1, 2].map(index => <div key={index} className="app-card h-52 skeleton-shimmer" />)}</div> : items.length === 0 ? <div className="app-card text-center py-12 max-w-lg mx-auto"><div className="w-20 h-20 rounded-[24px] bg-gold/30 flex items-center justify-center mx-auto mb-6 -rotate-6"><Package size={36} /></div><h2 className="text-2xl font-extrabold">İlk eşyanla başlayalım.</h2><p className="text-[15px] leading-relaxed text-ink-soft my-4">Çantan, anahtarın veya pati dostun…<br />Bir QR, eve dönüş için bir yol olsun.</p><Link href="/studio" className="app-button app-button-primary mt-3"><Plus size={19} />İlk QR etiketini oluştur</Link><p className="text-xs text-ink-soft mt-5">Ücretsiz · Birkaç adımda hazır</p></div> : matches.length === 0 ? <div className="app-card text-center py-12"><Search className="mx-auto text-ink/30 mb-4" size={30} /><h2 className="font-bold text-lg">Burada bir eşya bulamadık.</h2><p className="text-sm text-ink-soft mt-2">Başka bir isim veya filtre deneyebilirsin.</p><button className="app-button mt-5" onClick={() => { setQuery(""); setFilter("all"); }}>Filtreleri temizle</button></div> : <div className="grid grid-cols-2 gap-3">
+      <div className="app-card !px-5 !py-5 flex items-center gap-4 text-sm mb-6"><span className="flex gap-2 items-center font-bold"><Package size={18} />{stats?.total_items ?? "—"} eşya</span><span className="w-px h-5 bg-ink/15" /><span className={lost ? "text-[#a24a23] font-bold" : "text-ink-soft"}>{lost} kayıp</span><Link href="/messages" className="ml-auto text-[#1E7E75] font-bold flex items-center gap-1">{stats?.unread_messages ? `${stats.unread_messages} yeni` : "Mesajlar"}<ChevronRight size={16} /></Link></div>
+      <div className="flex flex-col lg:flex-row gap-3 mb-5"><div className="relative flex-1"><Search size={20} className="absolute left-4 top-4 text-ink/40" /><input className="app-input !pl-12 bg-paper-card" aria-label="Eşyalarında ara" placeholder="Eşyalarında ara…" maxLength={100} value={query} onChange={event => setQuery(event.target.value)} /></div><div className="flex gap-2 overflow-x-auto no-scrollbar pb-1 lg:pb-0">{[["all", "Tümü"], ["safe", "Güvende"], ["lost", "Kayıp"], ["resolved", "Teslim alındı"]].map(([key, label]) => <button key={key} className="app-chip" aria-pressed={filter === key} onClick={() => setFilter(key)}>{label}</button>)}</div></div>
+      {error && <div className="app-card text-center py-10 mb-4"><p role="alert" className="text-rose-700 mb-5">{error} {items.length > 0 && "Son yüklenen kayıtlar gösteriliyor."}</p><button className="app-button" onClick={() => load()}>Yeniden dene</button></div>}{error && !items.length ? null : loading && !items.length ? <div className="grid grid-cols-2 gap-3" role="status" aria-label="Eşyalar yükleniyor">{[0, 1, 2].map(index => <div key={index} className="app-card h-52 skeleton-shimmer" />)}</div> : items.length === 0 && filter === "all" && !query ? <div className="app-card text-center py-12 max-w-lg mx-auto"><div className="w-20 h-20 rounded-[24px] bg-gold/30 flex items-center justify-center mx-auto mb-6 -rotate-6"><Package size={36} /></div><h2 className="text-2xl font-extrabold">İlk eşyanla başlayalım.</h2><p className="text-[15px] leading-relaxed text-ink-soft my-4">Çantan, anahtarın veya pati dostun…<br />Bir QR, eve dönüş için bir yol olsun.</p><Link href="/studio" className="app-button app-button-primary mt-3"><Plus size={19} />İlk QR etiketini oluştur</Link><p className="text-xs text-ink-soft mt-5">Ücretsiz · Birkaç adımda hazır</p></div> : matches.length === 0 ? <div className="app-card text-center py-12"><Search className="mx-auto text-ink/30 mb-4" size={30} /><h2 className="font-bold text-lg">Burada bir eşya bulamadık.</h2><p className="text-sm text-ink-soft mt-2">Başka bir isim veya filtre deneyebilirsin.</p><button className="app-button mt-5" onClick={() => { setQuery(""); setFilter("all"); }}>Filtreleri temizle</button></div> : <div className="grid grid-cols-2 gap-3">
         {visibleItems.map(item => <article key={item.id} className="app-card relative min-w-0 !p-0 overflow-hidden">
           <Link href={`/dashboard/${item.id}`} className="block px-3 pt-4 pb-3 focus-visible:!outline-offset-[-4px]" aria-label={`${decodeHtmlEntities(item.name)} detayları`}>
             <h2 className="text-sm font-extrabold truncate pr-7">{decodeHtmlEntities(item.name)}</h2>
@@ -65,8 +61,8 @@ function Dashboard() {
           <button className="app-icon-button absolute right-0 top-1" aria-label={`${decodeHtmlEntities(item.name)} işlemleri`} onClick={() => setMenu(item)}><MoreHorizontal size={19} /></button>
         </article>)}
       </div>}
-      {!loading && !error && !showAll && matches.length > 6 && <button className="app-button w-full mt-5" onClick={() => setShowAll(true)} aria-expanded={false}>Hepsini göster ({matches.length})</button>}
-      {items.length > 0 && !loading && !error && showPermission && <div className="app-card mt-6 flex gap-3 items-start"><Bell size={20} className="text-[#a7791c] shrink-0 mt-1" /><div className="flex-1"><p className="text-sm font-bold">Mesajlardan haberin olsun.</p><p className="text-xs leading-relaxed text-ink-soft mt-1">Site açıkken yeni mesaj ve tarama uyarılarını al.</p><button className="text-sm font-bold text-[#1E7E75] min-h-11" onClick={async () => { try { const result = await Notification.requestPermission(); if (result !== "default") setShowPermission(false); if (result === "granted") toast.success("Tarayıcı bildirimleri açıldı."); } catch { toast.error("Bildirim izni alınamadı."); } }}>Bildirimleri aç</button></div><button className="app-icon-button -mr-2 -mt-2" aria-label="Şimdilik kapat" onClick={() => { setShowPermission(false); sessionStorage.setItem("kq_notification_dismissed", "yes"); }}><X size={18} /></button></div>}
+      {page.hasMore && <button className="app-button w-full mt-5" disabled={page.loadingMore || loading} onClick={page.loadMore}>{page.loadingMore ? "Yükleniyor…" : "Daha fazla eşya göster"}</button>}
+      {items.length > 0 && !loading && !error && showPermission && <div className="app-card mt-6 flex gap-3 items-start"><Bell size={20} className="text-[#a7791c] shrink-0 mt-1" /><div className="flex-1"><p className="text-sm font-bold">Mesajlardan haberin olsun.</p><p className="text-xs leading-relaxed text-ink-soft mt-1">Site açık ve görünürken bildirimler yaklaşık dakikada bir kontrol edilir. Site kapalıyken ilk mesaj e-postası tercihin geçerlidir.</p><button className="text-sm font-bold text-[#1E7E75] min-h-11" onClick={async () => { try { const result = await Notification.requestPermission(); if (result !== "default") setShowPermission(false); if (result === "granted") toast.success("Tarayıcı bildirimleri açıldı."); } catch { toast.error("Bildirim izni alınamadı."); } }}>Bildirimleri aç</button></div><button className="app-icon-button -mr-2 -mt-2" aria-label="Şimdilik kapat" onClick={() => { setShowPermission(false); sessionStorage.setItem("kq_notification_dismissed", "yes"); }}><X size={18} /></button></div>}
       {items.length > 0 && <p className="text-xs text-ink-soft flex gap-2 justify-center mt-8"><CheckMark />Eşya bilgilerin değişse de basılı QR’ın aynı kalır.</p>}
     </main>
     <Sheet open={!!menu} onClose={() => setMenu(null)} title={decodeHtmlEntities(menu?.name) || "Eşya işlemleri"}>{menu && <div className="space-y-2"><Link className="app-button w-full justify-start" href={`/dashboard/${menu.id}`}><Package size={19} />Eşya detayları</Link><Link className="app-button w-full justify-start" href={`/studio?edit=${menu.id}`}><Pencil size={19} />Bilgileri ve tasarımı düzenle</Link><button className="app-button w-full justify-start" onClick={() => { setExportItem(menu); setMenu(null); }}><Download size={19} />QR’ı indir / yazdır</button><button className="app-button w-full justify-start" onClick={() => { setStatusItem(menu); setMenu(null); }}><Flag size={19} />Eşya durumunu değiştir</button><Link className="app-button w-full justify-start" href={`/dashboard/${menu.id}?delete=1`}>Silme ve diğer işlemler</Link></div>}</Sheet>

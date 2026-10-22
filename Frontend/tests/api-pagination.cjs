@@ -8,7 +8,7 @@ const code = ts.transpileModule(fs.readFileSync("src/lib/api.ts", "utf8"), {
 }).outputText;
 
 function client(fetch) {
-  const context = { exports: {}, process: { env: { NEXT_PUBLIC_API_URL: "https://api.test/api/v1" } }, URLSearchParams, fetch };
+  const context = { exports: {}, process: { env: { NEXT_PUBLIC_API_URL: "https://api.test/api/v1" } }, URLSearchParams, fetch, AbortController, setTimeout, clearTimeout };
   vm.runInNewContext(code, context);
   return context.exports;
 }
@@ -19,13 +19,15 @@ async function run() {
     const url = new URL(raw);
     calls.push(url);
     const offset = Number(url.searchParams.get("offset"));
-    assert.equal(url.searchParams.get("limit"), "100");
+    assert.equal(url.searchParams.get("limit"), "20");
     assert.equal(url.searchParams.get("status"), "lost");
-    const page = offset === 0 ? Array.from({ length: 100 }, (_, id) => ({ id: String(id) })) : [{ id: "last" }];
+    const page = offset === 0 ? Array.from({ length: 20 }, (_, id) => ({ id: String(id) })) : [{ id: "last" }];
     return { ok: true, status: 200, json: async () => page };
   });
-  assert.equal((await api.itemsApi.list("lost")).length, 101);
-  assert.equal(calls[1].searchParams.get("offset"), "100");
+  assert.equal((await api.itemsApi.list("lost")).length, 20);
+  assert.equal(calls.length, 1, "List opening fetches one page only");
+  await api.itemsApi.list("lost", undefined, 20);
+  assert.equal(calls[1].searchParams.get("offset"), "20");
 
   const historyCalls = [];
   const history = client(async raw => {

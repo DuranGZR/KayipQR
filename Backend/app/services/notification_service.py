@@ -89,14 +89,17 @@ class NotificationService:
 
     @staticmethod
     async def get_user_notifications(
-        db: AsyncSession, user_id: str, limit: int = 50
+        db: AsyncSession, user_id: str, limit: int = 50, offset: int = 0, unread_only: bool = False
     ) -> List[NotificationResponse]:
         query = (
             select(Notification)
             .where(Notification.user_id == user_id)
-            .order_by(Notification.created_at.desc())
+            .order_by(Notification.created_at.desc(), Notification.id.desc())
             .limit(limit)
+            .offset(offset)
         )
+        if unread_only:
+            query = query.where(Notification.is_read.is_(False))
         result = await db.execute(query)
         notifs = result.scalars().all()
         return [NotificationResponse.model_validate(n) for n in notifs]

@@ -38,7 +38,7 @@ async def verify_email(request: Request, body: EmailTokenRequest, db: AsyncSessi
 @router.post("/resend-verification")
 async def resend_verification(request: Request, body: UserForgotPassword, db: AsyncSession = Depends(get_db)):
     await rate_limiter.check_rate_limit(request, max_requests=5, window_seconds=60, key_prefix="resend_verify")
-    return await auth_service.resend_verification(db, body.email)
+    return await auth_service.resend_verification(db, body.email, body.redirect_path)
 
 
 @router.post("/login", response_model=Token)

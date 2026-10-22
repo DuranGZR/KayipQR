@@ -58,7 +58,7 @@ export const Navbar = () => {
           </Link>
 
           <Link
-            href={isLoggedIn ? "/studio" : "/register"}
+            href={isLoggedIn ? "/studio" : "/register?redirect=/studio"}
             className="relative inline-flex items-center gap-1 text-ink font-extrabold text-[11.5px] px-3 py-1.5 rounded-lg bg-gold active:scale-95 transition-transform shadow-xs"
           >
             <WobblyButtonFrame stroke="#33302B" strokeWidth={1.4} />
@@ -132,7 +132,7 @@ export const Navbar = () => {
 
             <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
               <Link
-                href={isLoggedIn ? "/studio" : "/register"}
+                href={isLoggedIn ? "/studio" : "/register?redirect=/studio"}
                 className="relative inline-flex items-center gap-1.5 text-ink font-bold text-xs sm:text-sm px-3.5 py-1.5 sm:px-4 sm:py-2 active:translate-y-[1.5px] transition-all"
               >
                 <WobblyButtonFrame fill="#F2B63C" stroke="#33302B" strokeWidth={1.5} />

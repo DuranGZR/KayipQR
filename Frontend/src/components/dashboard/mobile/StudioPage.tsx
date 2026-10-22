@@ -1,4 +1,6 @@
 "use client";
+import { useStudioDraft } from "@/lib/useStudioDraft";
+import { isQrColor as validColor, qrContrast as contrast, qrColorError, ITEM_NAME_MAX, OWNER_NAME_MAX, ITEM_NOTE_MAX, QR_LABEL_MAX } from "@/lib/qrPolicy";
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -11,35 +13,25 @@ import { itemsApi, getAuthToken, getPublicAppUrl, ItemData } from "@/lib/api";
 import { decodeHtmlEntities } from "@/lib/utils";
 
 const categories = ["Kişisel Eşya", "Teknoloji", "Çanta & Bavul", "Anahtar", "Evcil Hayvan", "Kimlik & Kart"];
-const emptyForm = { name: "", category: "Kişisel Eşya", owner: "", note: "", showName: true, showNote: true, design: CUSTOM_QR_DESIGNS[0].id, foreground: CUSTOM_QR_DESIGNS[0].fgColor, background: CUSTOM_QR_DESIGNS[0].bgColor, label: "BENİ TARA" };
-type Form = typeof emptyForm;
-const validColor = (color: string) => /^#[0-9a-f]{6}$/i.test(color);
-function contrast(a: string, b: string) {
-  const luminance = (value: string) => { const channels = value.slice(1).match(/.{2}/g)!.map(channel => parseInt(channel, 16) / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4); return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722; };
-  const x = luminance(a); const y = luminance(b); return (Math.max(x, y) + .05) / (Math.min(x, y) + .05);
-}
 function Studio() {
   const router = useRouter(); const search = useSearchParams();
   const editId = search.get("edit") || search.get("id");
-  const [form, setForm] = useState<Form>(emptyForm);
-  const [step, setStep] = useState(0);
-  const [item, setItem] = useState<ItemData | null>(null);
+  const { form, setForm, step, setStep, item, setItem, saving, setSaving } = useStudioDraft(editId);
   const [loading, setLoading] = useState(!!editId);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [nameError, setNameError] = useState("");
   const [preview, setPreview] = useState(false);
   const saveLock = useRef(false);
-  const patch = (values: Partial<Form>) => setForm(previous => ({ ...previous, ...values }));
+  const patch = (values: Partial<typeof form>) => setForm(previous => ({ ...previous, ...values }));
   useEffect(() => {
     if (!getAuthToken()) { router.replace("/login?redirect=/studio"); return; }
     let cancelled = false;
-    if (!editId) { setForm(emptyForm); setItem(null); setLoading(false); setStep(0); return; }
+    if (!editId || item?.id === editId) { setLoading(false); return; }
     setLoading(true);
     itemsApi.get(editId).then(result => {
       if (cancelled) return;
       const design = CUSTOM_QR_DESIGNS.find(preset => preset.id === result.qr_code?.frame_type) || CUSTOM_QR_DESIGNS[0];
-      const next: Form = { name: decodeHtmlEntities(result.name), category: result.category, owner: decodeHtmlEntities(result.owner_display_name), note: decodeHtmlEntities(result.description), showName: result.show_name_to_finder ?? true, showNote: result.show_desc_to_finder ?? true, design: design.id, foreground: result.qr_code?.color_dark || design.fgColor, background: result.qr_code?.color_light || design.bgColor, label: result.qr_code?.frame_text ?? "BENİ TARA" };
+      const next: typeof form = { name: decodeHtmlEntities(result.name), category: result.category, owner: decodeHtmlEntities(result.owner_display_name), note: decodeHtmlEntities(result.description), showName: result.show_name_to_finder ?? true, showNote: result.show_desc_to_finder ?? true, design: design.id, foreground: result.qr_code?.color_dark || design.fgColor, background: result.qr_code?.color_light || design.bgColor, label: result.qr_code?.frame_text ?? "BENİ TARA" };
       setForm(next); setItem(result); setError("");
     }).catch(cause => { if (!cancelled) setError((cause as Error).message); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -56,8 +48,9 @@ function Studio() {
     if (!form.name.trim()) { setNameError("Eşyan için bir isim yaz."); go(0); document.getElementById("item-name")?.focus(); return; }
     setNameError("");
     if (step === 0) { go(1); return; }
-    if (saveLock.current || loading) return;
-    if (!colorsValid) { setError("Renkleri #1E7E75 biçiminde, altı haneli HEX koduyla yaz."); return; }
+    if (saveLock.current || saving || loading) return;
+    const colorError = qrColorError(form.foreground, form.background);
+    if (colorError) { setError(colorError); return; }
     saveLock.current = true; setSaving(true);
     try {
       const data = { name: form.name.trim(), category: form.category, description: form.note.trim(), owner_display_name: form.owner.trim(), show_name_to_finder: form.showName, show_desc_to_finder: form.showNote, qr_color_dark: fg, qr_color_light: bg, qr_pattern_style: form.design, qr_frame_type: form.design, qr_frame_text: form.label };
@@ -78,10 +71,10 @@ function Studio() {
       {loading ? <div className="app-card py-20 text-center" role="status"><Loader2 className="animate-spin mx-auto mb-3" />Eşya yükleniyor…</div> : error && editId && !item ? <Link className="app-button" href="/dashboard">Eşyalarıma dön</Link> : <>
         {step === 0 && <div className="grid lg:grid-cols-[1.2fr_0.8fr] gap-6 items-start">
           <section className="app-card space-y-6">
-            <div><label className="app-label" htmlFor="item-name">Eşyana bir isim ver</label><input id="item-name" className="app-input" placeholder="Örn. Günlük sırt çantam" maxLength={255} value={form.name} aria-invalid={!!nameError} aria-describedby={nameError ? "name-error" : undefined} onChange={event => { patch({ name: event.target.value }); setNameError(""); }} />{nameError && <p id="name-error" role="alert" className="text-sm text-rose-700 mt-2">{nameError}</p>}</div>
+            <div><label className="app-label" htmlFor="item-name">Eşyana bir isim ver</label><input id="item-name" className="app-input" placeholder="Örn. Günlük sırt çantam" maxLength={ITEM_NAME_MAX} value={form.name} aria-invalid={!!nameError} aria-describedby={nameError ? "name-error" : undefined} onChange={event => { patch({ name: event.target.value }); setNameError(""); }} />{nameError && <p id="name-error" role="alert" className="text-sm text-rose-700 mt-2">{nameError}</p>}</div>
             <fieldset><legend className="app-label">Kategori</legend><div className="flex flex-wrap gap-2">{(categories.includes(form.category) ? categories : [form.category, ...categories]).map(category => <button key={category} className="app-chip" aria-pressed={form.category === category} onClick={() => patch({ category })}>{category}</button>)}</div></fieldset>
-            <div><label className="app-label" htmlFor="owner-name">Görünen adın <span className="font-normal text-ink-soft">(isteğe bağlı)</span></label><input id="owner-name" className="app-input" placeholder="Örn. Duran K." maxLength={255} value={form.owner} onChange={event => patch({ owner: event.target.value })} /><p className="text-xs text-ink-soft mt-2">Boş bırakırsan “Eşya Sahibi” görünür.</p></div>
-            <div><label className="app-label" htmlFor="finder-note">Bulan kişiye notun <span className="font-normal text-ink-soft">(isteğe bağlı)</span></label><textarea id="finder-note" className="app-input min-h-28 resize-y" rows={3} maxLength={2000} placeholder="Bulduysan lütfen buradan mesaj bırak. Teşekkürler!" value={form.note} onChange={event => patch({ note: event.target.value })} /></div>
+            <div><label className="app-label" htmlFor="owner-name">Görünen adın <span className="font-normal text-ink-soft">(isteğe bağlı)</span></label><input id="owner-name" className="app-input" placeholder="Örn. Duran K." maxLength={OWNER_NAME_MAX} value={form.owner} onChange={event => patch({ owner: event.target.value })} /><p className="text-xs text-ink-soft mt-2">Boş bırakırsan “Eşya Sahibi” görünür.</p></div>
+            <div><label className="app-label" htmlFor="finder-note">Bulan kişiye notun <span className="font-normal text-ink-soft">(isteğe bağlı)</span></label><textarea id="finder-note" className="app-input min-h-28 resize-y" rows={3} maxLength={ITEM_NOTE_MAX} placeholder="Bulduysan lütfen buradan mesaj bırak. Teşekkürler!" value={form.note} onChange={event => patch({ note: event.target.value })} /></div>
             <details className="border-t border-ink/10 pt-4"><summary className="font-bold text-sm cursor-pointer min-h-11 flex items-center gap-2"><ShieldCheck size={18} />Görünürlük tercihleri</summary><div className="space-y-4 pt-3">{[{ key: "showName" as const, label: "Eşya adı görünsün" }, { key: "showNote" as const, label: "Notum görünsün" }].map(option => <label key={option.key} className="flex justify-between items-center gap-4 min-h-12 text-sm">{option.label}<input type="checkbox" className="app-switch" checked={form[option.key]} onChange={event => patch({ [option.key]: event.target.checked })} /></label>)}</div></details>
           </section>
           <aside className="app-card bg-[#edf1e8]"><div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center mb-4"><ShieldCheck className="text-[#1E7E75]" /></div><h2 className="text-lg font-bold">Sana ulaşırlar,<br />bilgilerine değil.</h2><p className="text-sm leading-relaxed text-ink-soft mt-3">QR etiketin yalnızca bu eşyanın sayfasını açar. Telefonun ve e-postan bulan kişiye gösterilmez.</p></aside>
@@ -92,7 +85,7 @@ function Studio() {
               {form.design === design.id && <span className="absolute top-2 right-2 w-6 h-6 rounded-full bg-[#1E7E75] text-white flex items-center justify-center"><Check size={14} /></span>}
               <div className="h-32 flex items-center justify-center overflow-hidden"><DynamicQrRenderer data={`${getPublicAppUrl()}/q/ONIZLEME`} designId={design.id} size={104} labelText="" /></div><span className="block text-sm font-bold mt-2">{design.name.replace(/^\d+\.\s*/, "")}</span><span className="block text-[11px] text-ink-soft mt-1">{design.shape === "circle" ? "Yuvarlak etiket" : "Kare etiket"}</span>
             </button>)}</div></section>
-            <section className="app-card space-y-4"><label className="app-label" htmlFor="qr-label">Etiketin üzerindeki yazı</label><input id="qr-label" className="app-input" maxLength={22} value={form.label} onChange={event => patch({ label: event.target.value })} placeholder="Yazısız da kullanabilirsin" /><div className="flex gap-2 flex-wrap">{["BENİ TARA", "BULDUYSAN TARA", ""].map(label => <button className="app-chip" key={label} aria-pressed={form.label === label} onClick={() => patch({ label })}>{label || "Yazısız"}</button>)}</div>
+            <section className="app-card space-y-4"><label className="app-label" htmlFor="qr-label">Etiketin üzerindeki yazı</label><input id="qr-label" className="app-input" maxLength={QR_LABEL_MAX} value={form.label} onChange={event => patch({ label: event.target.value })} placeholder="Yazısız da kullanabilirsin" /><div className="flex gap-2 flex-wrap">{["BENİ TARA", "BULDUYSAN TARA", ""].map(label => <button className="app-chip" key={label} aria-pressed={form.label === label} onClick={() => patch({ label })}>{label || "Yazısız"}</button>)}</div>
               <details className="border-t border-ink/10 pt-4"><summary className="flex items-center gap-2 font-bold text-sm min-h-11 cursor-pointer"><Palette size={18} />Renkleri özelleştir</summary><div className="grid grid-cols-2 gap-3 mt-3">{[{ key: "foreground" as const, label: "QR rengi", color: fg }, { key: "background" as const, label: "Zemin", color: bg }].map(option => <div key={option.key}><label className="app-label" htmlFor={option.key}>{option.label}</label><input type="color" className="w-full h-12 rounded-lg" aria-label={option.label + " seç"} value={option.color} onChange={event => patch({ [option.key]: event.target.value })} /><input id={option.key} className="app-input mt-2 !text-sm" maxLength={7} value={form[option.key]} aria-invalid={!validColor(form[option.key])} onChange={event => patch({ [option.key]: event.target.value })} /></div>)}</div><button className="app-button w-full mt-4" onClick={() => patch({ foreground: preset.fgColor, background: preset.bgColor })}><RotateCcw size={17} />Orijinal renklere dön</button></details>
             </section>
           </div>
@@ -103,9 +96,9 @@ function Studio() {
           <QrExportPanel config={{ itemName: form.name, uniqueCode: item.qr_code.unique_code, designId: form.design, dotColor: fg, bgColor: bg, frameText: form.label }} />
           <Link href={`/dashboard/${item.id}`} className="app-button w-full mt-5">Eşya detayına git<ArrowRight size={17} /></Link>
         </div>}
-        {step < 2 && <div className="hidden md:flex justify-between gap-4 mt-7"><button className="app-button" onClick={() => step ? go(step - 1) : router.push("/dashboard")}><ArrowLeft size={18} />Geri</button><button className="app-button app-button-primary min-w-48" disabled={saving || loading || (!!editId && !item)} onClick={next}>{saving ? <Loader2 className="animate-spin" size={18} /> : step === 0 ? <Palette size={18} /> : <Check size={18} />}{saving ? "Kaydediliyor…" : step === 0 ? "Tasarıma geç" : "Kaydet ve QR’ı hazırla"}<ArrowRight size={17} /></button></div>}
+        {step < 2 && <div className="hidden md:flex justify-between gap-4 mt-7"><button className="app-button" onClick={() => step ? go(step - 1) : router.push("/dashboard")}><ArrowLeft size={18} />Geri</button><button className="app-button app-button-primary min-w-48" disabled={saving || loading || (!!editId && !item) || (step === 1 && !!qrColorError(form.foreground, form.background))} onClick={next}>{saving ? <Loader2 className="animate-spin" size={18} /> : step === 0 ? <Palette size={18} /> : <Check size={18} />}{saving ? "Kaydediliyor…" : step === 0 ? "Tasarıma geç" : "Kaydet ve QR’ı hazırla"}<ArrowRight size={17} /></button></div>}
       </>}
-      {step < 2 && <div className="app-mobile-action"><button className="app-icon-button border border-ink/15 !h-12 !w-12" aria-label="Önceki adıma dön" onClick={() => step ? go(step - 1) : router.push("/dashboard")}><ArrowLeft size={21} /></button><button className="app-button app-button-primary flex-1" disabled={saving || loading || (!!editId && !item)} onClick={next}>{saving ? <Loader2 size={19} className="animate-spin" /> : step === 0 ? <Palette size={19} /> : <Check size={19} />}{saving ? "Kaydediliyor…" : step === 0 ? "Tasarıma geç" : "Kaydet ve QR’ı hazırla"}<ArrowRight size={18} /></button></div>}
+      {step < 2 && <div className="app-mobile-action"><button className="app-icon-button border border-ink/15 !h-12 !w-12" aria-label="Önceki adıma dön" onClick={() => step ? go(step - 1) : router.push("/dashboard")}><ArrowLeft size={21} /></button><button className="app-button app-button-primary flex-1" disabled={saving || loading || (!!editId && !item) || (step === 1 && !!qrColorError(form.foreground, form.background))} onClick={next}>{saving ? <Loader2 size={19} className="animate-spin" /> : step === 0 ? <Palette size={19} /> : <Check size={19} />}{saving ? "Kaydediliyor…" : step === 0 ? "Tasarıma geç" : "Kaydet ve QR’ı hazırla"}<ArrowRight size={18} /></button></div>}
     </main>
     <Sheet open={preview} onClose={() => setPreview(false)} title="Etiket önizlemesi"><div className="flex justify-center py-5">{qr(290)}</div></Sheet>
   </div>;

@@ -262,5 +262,5 @@ async def test_verification_email_is_prepared_and_can_be_used(monkeypatch):
         monkeypatch.setattr(email_service, "send_email", send)
         await deliver_pending()
         import html, re
-        token = re.search(r"verify-email\?token=([^'\"<\s]+)", html.unescape(send.call_args.args[2])).group(1)
+        token = re.search(r"verify-email\?token=([^&'\"<\s]+)", html.unescape(send.call_args.args[2])).group(1)
         assert (await ac.post("/api/v1/auth/verify-email", json={"token": token})).status_code == 200

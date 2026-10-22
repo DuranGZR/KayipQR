@@ -8,6 +8,7 @@ from app.core.security import generate_unique_qr_code
 from app.models.qr_code import QRCode
 from app.models.item import Item
 from app.schemas.qr_code import QRCodeResponse, QRCodeDesignConfig
+from app.core.qr_policy import validate_qr_colors
 
 
 DEFAULT_PRESET_COLORS = {
@@ -60,6 +61,11 @@ class QRService:
         }
         if design_config:
             config_data.update(design_config)
+            for canonical, alias in (("color_dark", "fg_color"), ("color_light", "bg_color")):
+                if canonical in design_config or alias in design_config:
+                    config_data[canonical] = config_data[alias] = design_config.get(canonical) or design_config[alias]
+
+        validate_qr_colors(config_data["color_dark"], config_data["color_light"])
 
         db_qr = QRCode(
             item_id=item.id,
@@ -90,6 +96,12 @@ class QRService:
 
         design_config = QRCodeDesignConfig.model_validate(design_config).model_dump(exclude_unset=True)
         current_cfg.update(design_config)
+        # Normalize aliases so changing a single color cannot bypass the guard.
+        for canonical, alias in (("color_dark", "fg_color"), ("color_light", "bg_color")):
+            if canonical in design_config or alias in design_config:
+                current_cfg[canonical] = current_cfg[alias] = design_config.get(canonical) or design_config[alias]
+        validate_qr_colors(current_cfg.get("color_dark") or current_cfg.get("fg_color") or "#1E7E75",
+            current_cfg.get("color_light") or current_cfg.get("bg_color") or "#F6F0E4")
         qr_code.design_config = json.dumps(current_cfg)
         db.add(qr_code)
         await db.commit()

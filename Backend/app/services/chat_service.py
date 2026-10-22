@@ -148,7 +148,8 @@ class ChatService:
 
     @staticmethod
     async def get_conversations_for_owner(
-        db: AsyncSession, user_id: str, status_filter: Optional[str] = None, limit: Optional[int] = None, offset: int = 0
+        db: AsyncSession, user_id: str, status_filter: Optional[str] = None, limit: Optional[int] = None, offset: int = 0,
+        search_query: Optional[str] = None,
     ) -> List[ConversationResponse]:
         query = (
             select(Conversation)
@@ -157,11 +158,18 @@ class ChatService:
             .options(
                 selectinload(Conversation.item).selectinload(Item.qr_code),
             )
-            .order_by(Conversation.updated_at.desc())
+            .order_by(Conversation.updated_at.desc(), Conversation.id.desc())
         )
 
-        if status_filter and status_filter.lower() != "all":
+        if status_filter == "unread":
+            query = query.where(Conversation.messages.any(and_(Message.sender_type == "finder", Message.is_read.is_(False))))
+        elif status_filter and status_filter.lower() != "all":
             query = query.where(Conversation.status == status_filter.lower())
+
+        if search_query:
+            term = "%" + search_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            query = query.where(or_(Item.name.ilike(term, escape="\\"), Conversation.finder_alias.ilike(term, escape="\\"),
+                Conversation.messages.any(Message.content.ilike(term, escape="\\"))))
 
         if limit is not None:
             query = query.limit(limit).offset(offset)

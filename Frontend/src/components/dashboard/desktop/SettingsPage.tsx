@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useResponsiveState } from "@/lib/responsiveState";
+import { useUnsavedChanges } from "@/lib/useUnsavedChanges";
+import { useDialog } from "@/lib/useDialog";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -40,23 +43,23 @@ import {
 export default function SettingsPage() {
   const router = useRouter();
 
-  const [currentUser, setCurrentUser] = useState<UserType | null>(null);
+  const [currentUser, setCurrentUser] = useResponsiveState<UserType | null>("settings:user", null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Profile Form States
-  const [fullName, setFullName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [emailOnMessage, setEmailOnMessage] = useState(true);
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [fullName, setFullName] = useResponsiveState("settings:name", "");
+  const [phoneNumber, setPhoneNumber] = useResponsiveState("settings:phone", "");
+  const [emailOnMessage, setEmailOnMessage] = useResponsiveState("settings:mail", true);
+  const [isSavingProfile, setIsSavingProfile] = useResponsiveState("settings:busy", false);
   const [profileSuccessMsg, setProfileSuccessMsg] = useState("");
   const [profileErrorMsg, setProfileErrorMsg] = useState("");
 
   // Password Form States
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useResponsiveState("settings:current", "");
+  const [newPassword, setNewPassword] = useResponsiveState("settings:password", "");
+  const [confirmPassword, setConfirmPassword] = useResponsiveState("settings:repeat", "");
   const [showPassword, setShowPassword] = useState(false);
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isChangingPassword, setIsChangingPassword] = useResponsiveState("settings:busy", false);
   const [passwordSuccessMsg, setPasswordSuccessMsg] = useState("");
   const [passwordErrorMsg, setPasswordErrorMsg] = useState("");
 
@@ -65,6 +68,9 @@ export default function SettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
+  const dialog = useDialog(showDeleteModal, () => { if (!isDeletingAccount) setShowDeleteModal(false); });
+  const dirty = !!currentUser && (fullName !== (currentUser.full_name || "") || phoneNumber !== (currentUser.phone_number || "") || emailOnMessage !== (currentUser.email_on_message ?? true) || !!currentPassword || !!newPassword || !!confirmPassword);
+  const leaveDialog = useUnsavedChanges(dirty);
   const handleDeleteAccount = async () => {
     haptic.warning();
     if (deleteConfirmText.trim().toLowerCase() !== "hesabımı sil") return;
@@ -92,13 +98,11 @@ export default function SettingsPage() {
       }
 
       const user = await authApi.getMe(token);
+      if (!currentUser) { setFullName(user.full_name || ""); setPhoneNumber(user.phone_number || ""); setEmailOnMessage(user.email_on_message ?? true); }
       setCurrentUser(user);
-      setFullName(user.full_name || "");
-      setPhoneNumber(user.phone_number || "");
-      setEmailOnMessage(user.email_on_message ?? true);
     } catch (err: any) {
-      console.error("Failed to load user settings:", err);
-      router.push("/login");
+      setProfileErrorMsg(err.message || "Hesap bilgileri alınamadı.");
+      if (!getAuthToken()) router.push("/login");
     } finally {
       setIsLoading(false);
     }
@@ -111,6 +115,7 @@ export default function SettingsPage() {
   // Handle Profile Update
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSavingProfile || !currentUser) return;
     setProfileSuccessMsg("");
     setProfileErrorMsg("");
     setIsSavingProfile(true);
@@ -123,6 +128,7 @@ export default function SettingsPage() {
       });
 
       setCurrentUser(updated);
+      setFullName(updated.full_name || ""); setPhoneNumber(updated.phone_number || "");
       if (localStorage.getItem("kayipqr_token")) {
         localStorage.setItem("kayipqr_user", JSON.stringify(updated));
       }
@@ -139,6 +145,7 @@ export default function SettingsPage() {
   // Handle Password Change
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isChangingPassword || !currentUser) return;
     setPasswordSuccessMsg("");
     setPasswordErrorMsg("");
 
@@ -220,7 +227,7 @@ export default function SettingsPage() {
             <Loader2 className="w-4 h-4 animate-spin text-gold-dark" />
             <span>Kullanıcı ayarları yükleniyor...</span>
           </div>
-        ) : (
+        ) : !currentUser ? <div role="alert" className="app-error">{profileErrorMsg || "Hesap bilgileri alınamadı."}<button className="app-button mt-3" onClick={loadUserData}>Yeniden dene</button></div> : (
           <motion.div
             variants={staggerContainer(0.08)}
             initial="hidden"
@@ -271,13 +278,13 @@ export default function SettingsPage() {
                   <form onSubmit={handleSaveProfile} className="space-y-4">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
+                        <label htmlFor="settingspage-field-0" className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
                           <User className="w-3.5 h-3.5" /> Ad Soyad
                         </label>
-                        <input
+                        <input id="settingspage-field-0"
                           type="text"
                           required
-                          value={fullName}
+                          autoComplete="name" maxLength={255} value={fullName}
                           onChange={(e) => setFullName(e.target.value)}
                           placeholder="Adınız ve Soyadınız"
                           className="w-full px-3.5 py-2.5 bg-white rounded-xl border border-ink/25 text-ink font-semibold text-xs sm:text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-gold transition-all"
@@ -285,12 +292,12 @@ export default function SettingsPage() {
                       </div>
 
                       <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
+                        <label htmlFor="settingspage-field-1" className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
                           <Phone className="w-3.5 h-3.5" /> Telefon (Gizli Kalır)
                         </label>
-                        <input
+                        <input id="settingspage-field-1"
                           type="text"
-                          value={phoneNumber}
+                          autoComplete="tel" maxLength={50} value={phoneNumber}
                           onChange={(e) => setPhoneNumber(e.target.value)}
                           placeholder="05XX XXX XX XX"
                           className="w-full px-3.5 py-2.5 bg-white rounded-xl border border-ink/25 text-ink font-semibold text-xs sm:text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-gold transition-all"
@@ -299,10 +306,10 @@ export default function SettingsPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
+                      <label htmlFor="settingspage-field-2" className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1.5 flex items-center gap-1.5">
                         <Mail className="w-3.5 h-3.5" /> Kayıtlı E-posta Adresi
                       </label>
-                      <input
+                      <input id="settingspage-field-2"
                         type="email"
                         disabled
                         value={currentUser?.email || ""}
@@ -405,13 +412,13 @@ export default function SettingsPage() {
                   {currentUser?.has_password === false && <p className="text-sm leading-relaxed mb-4">Google ile giriş yapıyorsun. E-posta ile giriş için <a className="underline" href="/forgot-password">şifre belirleme bağlantısı isteyebilirsin</a>.</p>}
                   <form hidden={currentUser?.has_password === false} onSubmit={handleChangePassword} className="space-y-3.5">
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1 flex items-center gap-1.5">
+                      <label htmlFor="settingspage-field-4" className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1 flex items-center gap-1.5">
                         <Lock className="w-3.5 h-3.5" /> Mevcut Şifre
                       </label>
-                      <input
+                      <input id="settingspage-field-4"
                         type={showPassword ? "text" : "password"}
                         required
-                        value={currentPassword}
+                        autoComplete="current-password" maxLength={128} value={currentPassword}
                         onChange={(e) => setCurrentPassword(e.target.value)}
                         placeholder="••••••••"
                         className="w-full px-3.5 py-2.5 bg-white rounded-xl border border-ink/25 text-ink font-semibold text-xs sm:text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-gold transition-all"
@@ -419,14 +426,14 @@ export default function SettingsPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1 flex items-center gap-1.5">
+                      <label htmlFor="settingspage-field-5" className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1 flex items-center gap-1.5">
                         <Lock className="w-3.5 h-3.5" /> Yeni Şifre
                       </label>
-                      <input
+                      <input id="settingspage-field-5"
                         type={showPassword ? "text" : "password"}
                         required
                         minLength={6}
-                        value={newPassword}
+                        autoComplete="new-password" maxLength={128} value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         placeholder="En az 6 karakter"
                         className="w-full px-3.5 py-2.5 bg-white rounded-xl border border-ink/25 text-ink font-semibold text-xs sm:text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-gold transition-all"
@@ -434,13 +441,13 @@ export default function SettingsPage() {
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1 flex items-center gap-1.5">
+                      <label htmlFor="settingspage-field-6" className="block text-xs font-bold uppercase tracking-wider text-ink-soft mb-1 flex items-center gap-1.5">
                         <Lock className="w-3.5 h-3.5" /> Yeni Şifre (Tekrar)
                       </label>
-                      <input
+                      <input id="settingspage-field-6"
                         type={showPassword ? "text" : "password"}
                         required
-                        value={confirmPassword}
+                        autoComplete="new-password" maxLength={128} value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         placeholder="••••••••"
                         className="w-full px-3.5 py-2.5 bg-white rounded-xl border border-ink/25 text-ink font-semibold text-xs sm:text-sm shadow-xs focus:outline-none focus:ring-2 focus:ring-gold transition-all"
@@ -517,15 +524,17 @@ export default function SettingsPage() {
           </motion.div>
         )}
 
+      <a className="block text-sm underline my-6" href="mailto:contact@durangezer.com">Yardıma mı ihtiyacın var? contact@durangezer.com</a>
       </motion.main>
 
+      {leaveDialog}
       {/* Delete Account Confirmation Modal */}
       {showDeleteModal && (
         <div
           className="fixed inset-0 z-50 bg-black/65 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in"
-          onClick={() => setShowDeleteModal(false)}
+          onClick={() => !isDeletingAccount && setShowDeleteModal(false)}
         >
-          <div
+          <div ref={dialog} role="dialog" aria-modal="true" aria-label="Hesabı kalıcı olarak sil" tabIndex={-1}
             className="w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl border border-ink/20 space-y-4"
             onClick={(e) => e.stopPropagation()}
           >
@@ -535,8 +544,8 @@ export default function SettingsPage() {
                 <span>Hesabı Kalıcı Olarak Sil</span>
               </div>
               <button
-                onClick={() => setShowDeleteModal(false)}
-                className="p-1 rounded-lg hover:bg-paper-hover text-ink-soft"
+                onClick={() => !isDeletingAccount && setShowDeleteModal(false)}
+                aria-label="Kapat" className="p-1 rounded-lg hover:bg-paper-hover text-ink-soft"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -547,10 +556,10 @@ export default function SettingsPage() {
             </p>
 
             <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-ink">
+              <label htmlFor="settingspage-field-7" className="block text-xs font-bold text-ink">
                 Onaylamak için <span className="font-mono text-rose-600 font-extrabold select-all">hesabımı sil</span> yazın:
               </label>
-              <input
+              <input id="settingspage-field-7"
                 type="text"
                 value={deleteConfirmText}
                 onChange={(e) => setDeleteConfirmText(e.target.value)}
@@ -562,7 +571,7 @@ export default function SettingsPage() {
             <div className="pt-2 flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => setShowDeleteModal(false)}
+                onClick={() => !isDeletingAccount && setShowDeleteModal(false)}
                 className="flex-1 py-2.5 rounded-xl bg-paper-hover hover:bg-paper-card border border-ink/20 text-xs font-bold text-ink"
               >
                 Vazgeç

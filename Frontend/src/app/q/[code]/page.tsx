@@ -681,6 +681,7 @@ export default function PublicFinderPage() {
               </div>
             </div>
 
+            <p className="shrink-0 px-4 py-3 text-xs leading-relaxed bg-gold/10 border-b border-ink/10">{lang === "tr" ? "Yanıtı takip etmek için QR’ı aynı tarayıcıdan tekrar aç. Bu sayfayı yer imlerine ekleyebilirsin. Gizli sekme kapanırsa veya tarayıcı verileri silinirse bu konuşmaya erişimin kaybolabilir." : "Open this QR again in the same browser to check replies. You can bookmark this page. Closing a private tab or clearing browser data can remove access to this conversation."}</p>
             {/* Resolved Celebration Banner */}
             {conversation?.status === "resolved" && (
               <div className="shrink-0 px-3.5 py-2 bg-emerald-100 border-b border-emerald-300 text-[11px] font-bold text-emerald-950 flex items-center gap-2">

@@ -17,6 +17,7 @@ class EmailOutbox(Base):
     html_body = Column(Text, nullable=False)
     purpose = Column(String(32), nullable=False, default="notification", server_default="notification")
     auth_fingerprint = Column(String(64), nullable=True)
+    redirect_path = Column(String(512), nullable=True)
     expires_at = Column(DateTime(timezone=True), nullable=True)
     token_expires_at = Column(DateTime(timezone=True), nullable=True)
     status = Column(String(16), nullable=False, default="pending", index=True)
