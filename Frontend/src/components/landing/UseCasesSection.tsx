@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Laptop,
@@ -11,7 +12,7 @@ import {
   Camera,
   Sparkles,
 } from "lucide-react";
-import { WobblyCardFrame, WobblyBoxFrame, WobblyButtonFrame } from "@/components/ui/SketchBorders";
+import { WobblyCardFrame, WobblyButtonFrame } from "@/components/ui/SketchBorders";
 import {
   staggerContainer,
   fadeInUp,
@@ -29,7 +30,8 @@ const USE_CASES = [
       "QR etiketini cihazına veya kılıfına ekle. Bulan kişi cihazın kilidini açmadan sana mesaj gönderebilsin.",
     material: "Mat Şeffaf / Su Geçirmez Sticker",
     dimensions: "35mm x 35mm",
-    sampleMsg: "Merhaba, kafede unuttuğunuz Space Gray MacBook çantanızı baristaya bıraktım!",
+    image: "/images/use-cases/laptop.webp",
+    imageAlt: "QR etiketli kanvas laptop kılıfı ve tablet",
   },
   {
     id: "luggage",
@@ -41,7 +43,8 @@ const USE_CASES = [
       "Etiketi bavuluna veya bagaj kartına ekle. Bavulunu bulan kişi kodu tarayıp sana haber verebilsin.",
     material: "Sert Bagaj Kartı / Lamine Etiket",
     dimensions: "50mm x 50mm",
-    sampleMsg: "İstanbul-İzmir uçuşunda bavulunuz karışmış, 4 numaralı bagaj bandı yanındayım.",
+    image: "/images/use-cases/luggage.webp",
+    imageAlt: "Havalimanında QR bagaj etiketi takılmış koyu renkli valiz",
   },
   {
     id: "keys",
@@ -53,7 +56,8 @@ const USE_CASES = [
       "QR’ı anahtarlığına ekle veya basılı etiketi cüzdanına yerleştir. Bulan kişi sana nerede olduğunu yazabilsin.",
     material: "Pleksi / Metal Anahtarlık",
     dimensions: "25mm x 25mm",
-    sampleMsg: "Apartman girişinde anahtar demetinizi buldum, yönetici odasındayım.",
+    image: "/images/use-cases/keys.webp",
+    imageAlt: "QR anahtarlık etiketi ve cüzdandaki iletişim kartı",
   },
   {
     id: "pets",
@@ -65,7 +69,8 @@ const USE_CASES = [
       "QR etiketini tasmasına ekle. Dostunu bulan kişi site üzerinden sana mesaj gönderebilsin.",
     material: "Tasma Madalyonu",
     dimensions: "20mm x 20mm",
-    sampleMsg: "Parkta Golden cinsi köpeğinizi bulduk, veteriner kliniğinde bekliyoruz.",
+    image: "/images/use-cases/pets.webp",
+    imageAlt: "Tasmasında QR künye taşıyan golden retriever",
   },
   {
     id: "bike",
@@ -77,7 +82,8 @@ const USE_CASES = [
       "Etiketi görülebilen uygun bir yüzeye yerleştir. Bisikletini veya scooter’ını bulan kişi sana haber verebilsin.",
     material: "Su Geçirmez Vinil Sticker",
     dimensions: "40mm x 40mm",
-    sampleMsg: "Metro çıkışında kilitli unuttuğunuz kırmızı bisikletinizi gördüm.",
+    image: "/images/use-cases/bike.webp",
+    imageAlt: "Kadrosunda QR etiketi bulunan bordo şehir bisikleti",
   },
   {
     id: "camera",
@@ -89,7 +95,8 @@ const USE_CASES = [
       "Etiketi ekipmanına veya taşıma çantana ekle. Unutulduğunda bulan kişi sana mesaj gönderebilsin.",
     material: "Mat Ekipman Stickerı",
     dimensions: "30mm x 30mm",
-    sampleMsg: "Stüdyoda unuttuğunuz Sony lens çantasını resepsiyona teslim ettim.",
+    image: "/images/use-cases/camera.webp",
+    imageAlt: "QR etiketli kanvas çantasında fotoğraf makinesi",
   },
 ];
 
@@ -149,6 +156,8 @@ export const UseCasesSection = () => {
               variants={fadeInUp}
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
+              type="button"
+              aria-pressed={isSelected}
               onClick={() => setActiveTab(uc)}
               className={`relative flex items-center gap-2 px-4 py-2.5 text-xs sm:text-[13.5px] font-bold whitespace-nowrap transition-all duration-150 ${
                 isSelected
@@ -228,26 +237,19 @@ export const UseCasesSection = () => {
                 </div>
               </div>
 
-              {/* Right: Message Simulation Box with Wobbly Box Frame */}
-              <div className="md:col-span-5">
-                <div className="relative p-5 space-y-3">
-                  <WobblyBoxFrame fill="#FFFFFF" stroke="#33302B" strokeWidth={1.5} />
-
-                  <div className="flex items-center gap-2 pb-2 border-b border-ink/10 relative z-10 text-xs font-bold text-ink">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 border border-ink" />
-                    <span>Örnek mesaj</span>
-                  </div>
-
-                  <div className="p-3 rounded-lg bg-paper-hover border border-ink/15 text-[12.5px] text-ink leading-relaxed relative z-10">
-                    "{activeTab.sampleMsg}"
-                  </div>
-
-                  <div className="flex items-center justify-between text-[11px] text-ink-soft relative z-10">
-                    <span>🔒 Telefon numarası paylaşmadan</span>
-                    <span className="font-bold text-emerald-700">Site üzerinden mesajlaşma</span>
-                  </div>
-                </div>
-              </div>
+              {/* Illustrative use-case photograph */}
+              <figure className="relative md:col-span-5 aspect-[3/2] overflow-hidden rounded-xl border border-ink/15 bg-paper-hover">
+                <Image
+                  src={activeTab.image}
+                  alt={activeTab.imageAlt}
+                  fill
+                  sizes="(max-width: 767px) 90vw, 360px"
+                  className="object-cover"
+                />
+                <figcaption className="absolute bottom-2 right-2 rounded bg-paper-card/95 px-2 py-1 text-[9px] font-medium text-ink-soft shadow-sm">
+                  Temsili görsel
+                </figcaption>
+              </figure>
 
             </motion.div>
           </AnimatePresence>
