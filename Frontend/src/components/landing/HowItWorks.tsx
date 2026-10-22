@@ -1,17 +1,15 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import {
   Palette,
   Printer,
   Smartphone,
   Sparkles,
-  QrCode,
-  Scissors,
-  Send,
 } from "lucide-react";
-import { WobblyCardFrame, WobblyBoxFrame } from "@/components/ui/SketchBorders";
+import { WobblyCardFrame } from "@/components/ui/SketchBorders";
 import {
   staggerContainer,
   fadeInUp,
@@ -27,7 +25,8 @@ const STEPS = [
     desc: "Eşyana bir ad ver, tasarımını seç ve bulan kişiye göstermek istediğin bilgileri düzenle.",
     badge: "Sana özel etiket",
     icon: Palette,
-    visualType: "qr",
+    image: "/images/how-it-works/01-tasarla.webp",
+    imageAlt: "Laptopta krem ve sarı renkli bir QR etiketi tasarlayan kişi",
   },
   {
     num: "02",
@@ -37,7 +36,8 @@ const STEPS = [
     desc: "QR etiketini indir. Evde yazdırabilir veya seçtiğin malzemeye bir baskı merkezinde bastırabilirsin.",
     badge: "Dijital olarak indir",
     icon: Printer,
-    visualType: "print",
+    image: "/images/how-it-works/02-bastir.webp",
+    imageAlt: "Evde yazdırılan QR etiketini kanvas çantasına yerleştiren kişi",
   },
   {
     num: "03",
@@ -47,9 +47,29 @@ const STEPS = [
     desc: "Etiketi tarayan kişi açılan sayfadan mesaj göndersin. Sen de hesabından yanıt verip teslim için anlaş.",
     badge: "Site üzerinden mesajlaş",
     icon: Smartphone,
-    visualType: "scan",
+    image: "/images/how-it-works/03-mesajlas.webp",
+    imageAlt: "QR etiketli çantayı bulan kişinin telefondan sahibine mesaj göndermesi",
   },
 ];
+
+function StepPhoto({ step }: { step: (typeof STEPS)[number] }) {
+  return (
+    <figure className="pt-5 mt-auto">
+      <div className="relative aspect-[3/2] overflow-hidden rounded-xl border border-ink/15 bg-paper-hover">
+        <Image
+          src={step.image}
+          alt={step.imageAlt}
+          fill
+          sizes="(max-width: 767px) 90vw, (max-width: 1180px) 30vw, 330px"
+          className="object-cover"
+        />
+        <figcaption className="absolute bottom-2 right-2 rounded bg-paper-card/95 px-2 py-1 text-[9px] font-medium text-ink-soft shadow-sm">
+          Temsili görsel
+        </figcaption>
+      </div>
+    </figure>
+  );
+}
 
 export const HowItWorks = () => {
   const [activeStep, setActiveStep] = useState(0);
@@ -117,6 +137,7 @@ export const HowItWorks = () => {
                 key={step.num}
                 type="button"
                 onClick={() => setActiveStep(idx)}
+                aria-pressed={isSelected}
                 className={`py-2 px-1 rounded-lg text-[11px] font-bold transition-all flex flex-col items-center justify-center gap-0.5 ${
                   isSelected
                     ? "bg-gold text-ink font-extrabold shadow-2xs border border-ink/30"
@@ -125,7 +146,7 @@ export const HowItWorks = () => {
               >
                 <span className="text-[9.5px] opacity-75">Adım {step.num}</span>
                 <span className="truncate max-w-full">
-                  {idx === 0 ? "1. Seç" : idx === 1 ? "2. Yapıştır" : "3. Ulaşsın"}
+                  {idx === 0 ? "1. Tasarla" : idx === 1 ? "2. Bastır" : "3. Mesajlaş"}
                 </span>
               </button>
             );
@@ -162,7 +183,7 @@ export const HowItWorks = () => {
                   </span>
                 </div>
 
-                <span className="inline-block px-2.5 py-0.5 rounded bg-paper-hover border border-ink/20 text-[10.5px] font-bold text-ink-soft mb-1.5">
+                <span className="inline-block self-start px-2.5 py-0.5 rounded bg-paper-hover border border-ink/20 text-[10.5px] font-bold text-ink-soft mb-1.5">
                   {step.badge}
                 </span>
 
@@ -174,29 +195,7 @@ export const HowItWorks = () => {
                   {step.desc}
                 </p>
 
-                {/* Tactile Mini Graphic */}
-                <div className="mt-4 p-2.5 relative text-center bg-white rounded-xl border border-ink/20">
-                  <WobblyBoxFrame fill="#FFFFFF" stroke="#33302B" strokeWidth={1.2} />
-                  
-                  {step.visualType === "qr" && (
-                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-ink relative z-10">
-                      <QrCode className="w-4.5 h-4.5 text-gold-dark" />
-                      <span>Sana özel QR etiketi</span>
-                    </div>
-                  )}
-                  {step.visualType === "print" && (
-                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-ink relative z-10">
-                      <Scissors className="w-4.5 h-4.5 text-ink" />
-                      <span>İndir ve bastır</span>
-                    </div>
-                  )}
-                  {step.visualType === "scan" && (
-                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-ink relative z-10">
-                      <Send className="w-4.5 h-4.5 text-emerald-700" />
-                      <span>Site üzerinden mesajlaş</span>
-                    </div>
-                  )}
-                </div>
+                <StepPhoto step={step} />
 
                 {/* Bottom Navigation & Indicator */}
                 <div className="mt-4 pt-3.5 border-t border-ink/10 flex items-center justify-between">
@@ -258,7 +257,7 @@ export const HowItWorks = () => {
                 </svg>
               </div>
 
-              <div className="relative z-10">
+              <div className="relative z-10 flex h-full flex-col">
                 {/* Header with Step Number */}
                 <div className="flex items-center justify-between mb-5">
                   <div className="w-11 h-11 rounded-xl bg-gold/25 border-[1.5px] border-ink flex items-center justify-center text-ink shadow-xs group-hover:scale-105 group-hover:bg-gold/40 transition-transform">
@@ -269,7 +268,7 @@ export const HowItWorks = () => {
                   </span>
                 </div>
 
-                <span className="inline-block px-2.5 py-0.5 rounded bg-paper-hover border border-ink/20 text-[11px] font-bold text-ink-soft mb-2">
+                <span className="inline-block self-start px-2.5 py-0.5 rounded bg-paper-hover border border-ink/20 text-[11px] font-bold text-ink-soft mb-2">
                   {step.badge}
                 </span>
 
@@ -281,29 +280,7 @@ export const HowItWorks = () => {
                   {step.desc}
                 </p>
 
-                {/* Tactile Mini Graphic with Wobbly Box Frame */}
-                <div className="mt-5 p-3 relative text-center">
-                  <WobblyBoxFrame fill="#FFFFFF" stroke="#33302B" strokeWidth={1.3} />
-                  
-                  {step.visualType === "qr" && (
-                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-ink relative z-10">
-                      <QrCode className="w-5 h-5 text-gold-dark" />
-                      <span>Sana özel QR etiketi</span>
-                    </div>
-                  )}
-                  {step.visualType === "print" && (
-                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-ink relative z-10">
-                      <Scissors className="w-5 h-5 text-ink" />
-                      <span>İndir ve bastır</span>
-                    </div>
-                  )}
-                  {step.visualType === "scan" && (
-                    <div className="flex items-center justify-center gap-2 text-xs font-bold text-ink relative z-10">
-                      <Send className="w-5 h-5 text-emerald-700" />
-                      <span>Site üzerinden mesajlaş</span>
-                    </div>
-                  )}
-                </div>
+                <StepPhoto step={step} />
               </div>
 
             </motion.div>
