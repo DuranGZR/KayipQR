@@ -751,6 +751,7 @@ export const publicApi = {
     uniqueCode: string,
     data: {
       message: string;
+      finder_email?: string;
       location_lat?: number;
       location_lng?: number;
       location_address?: string;

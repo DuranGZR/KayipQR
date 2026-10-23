@@ -13,6 +13,8 @@ class Conversation(Base):
     
     finder_session_token = Column(String(100), unique=True, nullable=False, index=True)
     finder_alias = Column(String(100), default="Bulan Kişi")
+    finder_email = Column(String(254), nullable=True)
+    finder_reply_notified_at = Column(DateTime(timezone=True), nullable=True)
     
     # Status: 'active', 'closed', 'blocked', 'resolved'
     status = Column(String(50), default="active", nullable=False, index=True)

@@ -26,10 +26,10 @@ KayıpQR bir GPS takip cihazı değildir; eşyanın bulunmasını veya geri dön
 
 - **QR tasarım stüdyosu:** Sekiz tasarım, renk ve etiket metni seçenekleri; PNG/SVG indirme, A4 yerleşimleri ve yazdırma/PDF kaydetme akışı.
 - **Eşya yönetimi:** Güvende, kayıp ve teslim alındı durumları; etiket yayınını duraklatma; bilgileri mevcut QR bağlantısını değiştirmeden güncelleme.
-- **Bulan kişi sayfası:** Üyeliksiz ilk mesaj, fotoğraf ekleme, isteğe bağlı konum paylaşımı ve Türkçe/İngilizce arayüz.
+- **Bulan kişi sayfası:** Üyeliksiz ilk mesaj, fotoğraf ekleme, isteğe bağlı konum paylaşımı, özel sohbet bağlantısını kopyalama ve Türkçe/İngilizce arayüz. İsteğe bağlı e-posta adresi eşya sahibine gösterilmez.
 - **Sohbet:** Fotoğraf, konum ve okundu bilgisi; Vercel profilinde görünür sekmede periyodik güncelleme. Sürekli çalışan backend için WebSocket seçeneği.
 - **Tarama geçmişi:** Tarama zamanı, cihaz bilgileri ve mevcutsa yaklaşık bölge; harici GeoIP varsayılan olarak kapalıdır.
-- **Bildirimler:** Site içi bildirim listesi, desteklenen tarayıcılarda izinle açık sayfa bildirimi ve her yeni konuşmanın ilk mesajı için tercihe bağlı e-posta. QR taramalarında ve sonraki mesajlarda e-posta gönderilmez.
+- **Bildirimler:** Site içi bildirim listesi, desteklenen tarayıcılarda izinle açık sayfa bildirimi ve her yeni konuşmanın ilk mesajında sahibine tercihe bağlı e-posta. Bulan kişi adresini bırakırsa sahibin ilk cevabında, aynı sohbete dönmesini sağlayan özel bağlantıyla tek bir e-posta alır. QR taramalarında ve sonraki mesajlarda e-posta gönderilmez. Her alıcı rolü için aynı adrese 15 dakikada en fazla 1, 24 saatte en fazla 10 bildirim sınırı uygulanır.
 - **Mobil web:** İki sütunlu eşya kartları, ilk altı karttan sonra “Hepsini göster”, açılır hesap menüsü ve dokunmaya uygun kontroller.
 
 ### Bildirimlerin sınırları

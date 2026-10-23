@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import List, Optional
+from urllib.parse import quote
 from sqlalchemy import func, select, update, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,6 +15,10 @@ from app.schemas.conversation import ConversationResponse, ConversationDetailRes
 from app.services.notification_service import notification_service
 from app.websockets.connection_manager import manager
 from app.core.media import validate_attachments
+from app.core.config import settings
+from app.services.email_service import email_service
+from app.services.outbox_service import queue_email
+from app.services.runtime_limits import consume_window
 
 
 class ChatService:
@@ -25,6 +30,7 @@ class ChatService:
         location_lat: Optional[float] = None,
         location_lng: Optional[float] = None,
         location_address: Optional[str] = None,
+        finder_email: Optional[str] = None,
     ) -> tuple[Conversation, Message]:
         content = await validate_attachments(db, content)
         content = sanitize_message_content(content)
@@ -48,6 +54,7 @@ class ChatService:
             item_id=item.id,
             finder_session_token=session_token,
             finder_alias=alias,
+            finder_email=finder_email,
             status="active",
         )
         db.add(conv)
@@ -299,6 +306,25 @@ class ChatService:
                     "item_name": conversation.item.name,
                 },
             )
+
+        if sender_type == "owner" and conversation.finder_email:
+            # Claim once in the message transaction, including across concurrent workers.
+            # A rollback also rolls back the claim and the queued email.
+            recipient = (await db.execute(update(Conversation).where(
+                Conversation.id == conversation.id,
+                Conversation.finder_reply_notified_at.is_(None),
+                Conversation.finder_email.is_not(None),
+            ).values(finder_reply_notified_at=datetime.now(timezone.utc))
+                .returning(Conversation.finder_email))).scalar_one_or_none()
+            if recipient:
+                cooldown = await consume_window(f"finder-mail:cooldown:{recipient.lower()}", 1, 900, db=db)
+                limited = await consume_window(f"finder-mail:daily:{recipient.lower()}", 10, 86400, db=db) if not cooldown else cooldown
+                if not cooldown and not limited:
+                    code = conversation.item.qr_code.unique_code
+                    chat_url = (f"{settings.PUBLIC_APP_URL.rstrip('/')}/q/{quote(code, safe='')}"
+                        f"#chat={quote(conversation.finder_session_token, safe='')}")
+                    queue_email(db, recipient, "KayıpQR — Eşya sahibi yanıtladı",
+                        email_service.render_finder_reply_email(chat_url))
 
         await db.commit()
         await db.refresh(msg)

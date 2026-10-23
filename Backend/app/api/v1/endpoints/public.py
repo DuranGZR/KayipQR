@@ -228,6 +228,7 @@ async def contact_item_owner(
         db=db,
         item=item,
         content=clean_content,
+        finder_email=str(contact_in.finder_email) if contact_in.finder_email else None,
         location_lat=contact_in.location_lat,
         location_lng=contact_in.location_lng,
         location_address=contact_in.location_address,

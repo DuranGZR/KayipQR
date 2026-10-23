@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 # Public view of an item for a finder who scanned a QR
@@ -20,6 +20,15 @@ class PublicItemResponse(BaseModel):
 # Public request when a finder starts a conversation
 class PublicContactRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000, description="Finder message to the owner")
+    finder_email: Optional[EmailStr] = Field(default=None, max_length=254)
+
+    @field_validator("finder_email", mode="before")
+    @classmethod
+    def normalize_finder_email(cls, value):
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
     location_lat: Optional[float] = Field(default=None, ge=-90.0, le=90.0)
     location_lng: Optional[float] = Field(default=None, ge=-180.0, le=180.0)
     location_address: Optional[str] = Field(default=None, max_length=255)

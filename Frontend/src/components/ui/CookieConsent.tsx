@@ -12,7 +12,8 @@ export const CookieConsent = () => {
   const [isVisible, setIsVisible] = useState(false);
 
   useEffect(() => {
-    const consent = localStorage.getItem("kayipqr_cookie_consent");
+    let consent: string | null = null;
+    try { consent = localStorage.getItem("kayipqr_cookie_consent"); } catch { /* Storage may be blocked. */ }
     if (!consent) {
       // Delay slightly for smooth appearance
       const timer = setTimeout(() => setIsVisible(true), 1200);
@@ -21,12 +22,12 @@ export const CookieConsent = () => {
   }, []);
 
   const handleAccept = () => {
-    localStorage.setItem("kayipqr_cookie_consent", "accepted");
+    try { localStorage.setItem("kayipqr_cookie_consent", "accepted"); } catch { /* Dismiss for this page. */ }
     setIsVisible(false);
   };
 
   const handleDismiss = () => {
-    localStorage.setItem("kayipqr_cookie_consent", "dismissed");
+    try { localStorage.setItem("kayipqr_cookie_consent", "dismissed"); } catch { /* Dismiss for this page. */ }
     setIsVisible(false);
   };
 

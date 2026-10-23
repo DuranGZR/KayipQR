@@ -5,6 +5,7 @@ import { OlderMessages } from "@/components/ui/OlderMessages";
 import { ChatImage } from "@/components/ui/ChatImage";
 import { startVisiblePolling } from "@/lib/visiblePolling";
 import { CHAT_WEBSOCKETS_ENABLED } from "@/lib/api";
+import { finderChatUrl, finderTokenFromHash, readFinderToken, saveFinderToken, removeFinderToken } from "@/lib/finderSession";
 
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
@@ -147,7 +148,7 @@ const I18N = {
 export default function PublicFinderPage() {
   const params = useParams();
   const toast = useToast();
-  const itemCode = typeof params?.code === "string" ? params.code.trim() : "";
+  const itemCode = typeof params?.code === "string" ? params.code.trim().toUpperCase() : "";
 
   const [lang, setLang] = useState<Lang>("tr");
   const t = I18N[lang];
@@ -158,6 +159,9 @@ export default function PublicFinderPage() {
 
   // First contact form states
   const [message, setMessage] = useState("");
+  const [finderEmail, setFinderEmail] = useState("");
+  const [showCopyLink, setShowCopyLink] = useState(false);
+  const [storageUnavailable, setStorageUnavailable] = useState(false);
   const [manualLocation, setManualLocation] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [locationCoords, setLocationCoords] = useState<{ lat: number; lng: number; address?: string } | null>(null);
@@ -193,7 +197,8 @@ export default function PublicFinderPage() {
 
   // Detect language
   useEffect(() => {
-    const saved = localStorage.getItem("kq_lang") as Lang;
+    let saved: Lang | null = null;
+    try { saved = localStorage.getItem("kq_lang") as Lang; } catch { /* Use device language. */ }
     if (saved && (saved === "tr" || saved === "en")) {
       setLang(saved);
     } else if (typeof navigator !== "undefined" && navigator.language && !navigator.language.startsWith("tr")) {
@@ -204,7 +209,7 @@ export default function PublicFinderPage() {
   const handleToggleLang = () => {
     const nextLang = lang === "tr" ? "en" : "tr";
     setLang(nextLang);
-    localStorage.setItem("kq_lang", nextLang);
+    try { localStorage.setItem("kq_lang", nextLang); } catch { /* Language still changes in memory. */ }
   };
 
   // 1. Fetch item data and check for existing finder session
@@ -217,10 +222,17 @@ export default function PublicFinderPage() {
       const data = await publicApi.getByQrCode(itemCode);
       setItem(data);
 
-      const savedToken = typeof window !== "undefined" ? localStorage.getItem(`kq_finder_token_${itemCode}`) : null;
+      const linkToken = finderTokenFromHash(window.location.hash);
+      const savedToken = linkToken || readFinderToken(itemCode);
       if (savedToken) {
-        setSessionToken(savedToken);
-        loadFinderChat(savedToken);
+        const restored = await loadFinderChat(savedToken, true);
+        if (restored) {
+          setSessionToken(savedToken);
+          setStorageUnavailable(!saveFinderToken(itemCode, savedToken));
+          window.history.replaceState(window.history.state, "", finderChatUrl(window.location.origin, itemCode, savedToken));
+        } else if (linkToken) {
+          setErrorMessage(lang === "tr" ? "Sohbet bağlantısı açılamadı. Bağlantıyı kontrol edip tekrar deneyin; sohbet silinmiş olabilir." : "Unable to open this chat link. Check the link and try again; the chat may have been deleted.");
+        }
       }
     } catch (err: any) {
       console.error("Item load error:", err);
@@ -231,25 +243,35 @@ export default function PublicFinderPage() {
   };
 
   // 2. Load finder chat messages
-  const loadFinderChat = async (token: string) => {
+  const loadFinderChat = async (token: string, throwOnFailure = false) => {
     try {
       const previous = latestSession.current === token ? latestChat.current : null;
       latestSession.current = token;
       const convData = await publicApi.getFinderConversation(token, previous);
-      if (latestSession.current !== token) return;
+      if (latestSession.current !== token) return false;
+      if (convData.item?.unique_code?.toUpperCase() !== itemCode) return false;
       setConversation(previous => mergeChatDetails(previous, convData));
+      return true;
     } catch (err) {
       console.error("Finder chat load error:", err);
-      if ((err as { status?: number }).status !== 404) return;
+      if (latestSession.current !== token) return false;
+      if ((err as { status?: number }).status !== 404) {
+        if (throwOnFailure) throw err;
+        return false;
+      }
       // If session was deleted by owner, reset to fresh contact form
-      localStorage.removeItem(`kq_finder_token_${itemCode}`);
+      if (readFinderToken(itemCode) === token) removeFinderToken(itemCode);
       setSessionToken(null);
       setConversation(null);
+      return false;
     }
   };
 
   useEffect(() => {
     loadItem();
+    const handleChatLinkChange = () => { loadItem(); };
+    window.addEventListener("hashchange", handleChatLinkChange);
+    return () => window.removeEventListener("hashchange", handleChatLinkChange);
   }, [itemCode]);
 
   // WebSocket real-time connection for finder (with 25s heartbeat, error handling & auto-reconnect)
@@ -380,11 +402,25 @@ export default function PublicFinderPage() {
   };
 
   const handleResetFinderSession = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(`kq_finder_token_${itemCode}`);
-    }
+    removeFinderToken(itemCode);
+    window.history.replaceState(window.history.state, "", window.location.pathname);
+    latestSession.current = null;
+    latestChat.current = null;
+    setShowCopyLink(false);
     setSessionToken(null);
     setConversation(null);
+  };
+
+  const handleCopyChatLink = async () => {
+    if (!sessionToken) return;
+    const link = finderChatUrl(window.location.origin, itemCode, sessionToken);
+    try {
+      await navigator.clipboard.writeText(link);
+      toast.success(lang === "tr" ? "Sohbet bağlantısı kopyalandı." : "Chat link copied.");
+    } catch {
+      setShowCopyLink(true);
+      toast.error(lang === "tr" ? "Bağlantıyı aşağıdaki alandan seçip kopyalayabilirsin." : "Select and copy the link from the field below.");
+    }
   };
 
   // HTML5 Geolocation Handler
@@ -491,6 +527,7 @@ export default function PublicFinderPage() {
 
       const resp = await publicApi.contactOwner(itemCode, {
         message: finalContent,
+        finder_email: finderEmail.trim() || undefined,
         location_lat: locationCoords?.lat,
         location_lng: locationCoords?.lng,
         location_address: finalAddress,
@@ -500,7 +537,8 @@ export default function PublicFinderPage() {
       toast.success(lang === "tr" ? "Mesajınız sahibine iletildi!" : "Message sent to owner!");
 
       if (resp.finder_session_token) {
-        localStorage.setItem(`kq_finder_token_${itemCode}`, resp.finder_session_token);
+        setStorageUnavailable(!saveFinderToken(itemCode, resp.finder_session_token));
+        window.history.replaceState(window.history.state, "", finderChatUrl(window.location.origin, itemCode, resp.finder_session_token));
         setSessionToken(resp.finder_session_token);
         await loadFinderChat(resp.finder_session_token);
       }
@@ -615,6 +653,7 @@ export default function PublicFinderPage() {
             >
               {t.btn_home}
             </Link>
+            <button type="button" onClick={loadItem} className="app-button">{lang === "tr" ? "Tekrar dene" : "Try again"}</button>
           </div>
         ) : !item?.is_active ? (
           <div className="app-card text-center space-y-4 !py-10">
@@ -681,7 +720,12 @@ export default function PublicFinderPage() {
               </div>
             </div>
 
-            <p className="shrink-0 px-4 py-3 text-xs leading-relaxed bg-gold/10 border-b border-ink/10">{lang === "tr" ? "Yanıtı takip etmek için QR’ı aynı tarayıcıdan tekrar aç. Bu sayfayı yer imlerine ekleyebilirsin. Gizli sekme kapanırsa veya tarayıcı verileri silinirse bu konuşmaya erişimin kaybolabilir." : "Open this QR again in the same browser to check replies. You can bookmark this page. Closing a private tab or clearing browser data can remove access to this conversation."}</p>
+            <div className="shrink-0 px-4 py-3 text-xs leading-relaxed bg-gold/10 border-b border-ink/10 space-y-2">
+              <p>{lang === "tr" ? "Sohbete geri dönmek için özel bağlantını sakla. Bu bağlantı sohbetini açar; başkalarıyla paylaşma." : "Save your private link to return to this chat. This link grants access to your chat; do not share it."}</p>
+              {storageUnavailable && <p role="status">{lang === "tr" ? "Tarayıcı sohbeti hatırlayamıyor. Kapatmadan önce bağlantıyı kopyala." : "Your browser cannot remember this chat. Copy the link before closing."}</p>}
+              <button type="button" onClick={handleCopyChatLink} className="app-button !text-xs !min-h-11">{lang === "tr" ? "Sohbet bağlantısını kopyala" : "Copy chat link"}</button>
+              {showCopyLink && <input readOnly aria-label={lang === "tr" ? "Özel sohbet bağlantısı" : "Private chat link"} className="app-input !text-xs" value={finderChatUrl(window.location.origin, itemCode, sessionToken)} onFocus={event => event.target.select()} />}
+            </div>
             {/* Resolved Celebration Banner */}
             {conversation?.status === "resolved" && (
               <div className="shrink-0 px-3.5 py-2 bg-emerald-100 border-b border-emerald-300 text-[11px] font-bold text-emerald-950 flex items-center gap-2">
@@ -1089,6 +1133,11 @@ export default function PublicFinderPage() {
               </div>
 
               {/* Submit Button & Reassurance */}
+              <div className="space-y-2">
+                <label htmlFor="finder-email" className="text-sm font-bold">{lang === "tr" ? "Yanıt gelince e-posta ile haber ver (isteğe bağlı)" : "Email me when the owner replies (optional)"}</label>
+                <input id="finder-email" type="email" autoComplete="email" maxLength={254} value={finderEmail} onChange={event => setFinderEmail(event.target.value)} aria-describedby="finder-email-help" placeholder="ornek@eposta.com" className="app-input" />
+                <p id="finder-email-help" className="text-xs text-ink-soft leading-relaxed">{lang === "tr" ? "Adresini bırakırsan sahibin ilk yanıtında sohbete dönüş bağlantısı içeren tek bir e-posta gönderilir. Adresin eşya sahibine gösterilmez; sonraki mesajlarda mail gönderilmez." : "Leave your email to receive one notification with your chat link when the owner first replies. Your address is hidden from the owner. Later messages do not send emails."}</p>
+              </div>
               <div className="shrink-0 pt-1 space-y-3">
                 <button
                   type="submit"

@@ -15,6 +15,8 @@ Copy-Item .env.example .env
 
 Mevcut `.env` dosyanızın üzerine yazmayın. Yeni ortam için rastgele bir `SECRET_KEY` üretin. Yerel varsayılanlar SQLite ve yerel dosya depolamasıdır; e-posta servisi yapılandırılmadan gerçek mail gönderilmez.
 
+Bulan kişinin isteğe bağlı e-postası ve ilk sahip yanıtı bildirimi için dağıtımdan önce `alembic upgrade head` çalıştırılmalıdır (`20261023_finder_reply`). `PUBLIC_APP_URL` kullanıcıların eriştiği frontend adresi olmalıdır. İlk yanıt bildirimi, mesajla aynı işlemde outbox'a alınır; paralel yanıtlar tek bildirim oluşturur. Gönderim hataları mevcut outbox yeniden deneme mekanizmasını kullanır. Sohbet bağlantısı erişim anahtarını URL fragment'inde (`#chat=...`) taşır; bu bağlantı kişiye özeldir ve sohbet silinince geçersiz olur.
+
 - `/docs` ve `/redoc`: yalnızca geliştirme/test ortamında API dokümantasyonu.
 - `/health`: process canlılığı.
 - `/ready`: veritabanı şeması ve yapılandırılan bağımlılıkların hazır olması.

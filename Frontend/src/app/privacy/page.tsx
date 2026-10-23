@@ -99,7 +99,7 @@ export default function PrivacyPolicyPage() {
                     <ul className="list-disc pl-5 space-y-1">
                       <li><strong>Hesap Bilgileri:</strong> E-posta adresi, Argon2id parola özeti (eski hesaplarda bcrypt geçiş desteği), doğrulama durumu, isteğe bağlı ad-soyad ve telefon numarası. Google ile giriş seçilirse Google hesap kimliği, doğrulanmış e-posta ve ad bilgisi alınır; Google parolanız alınmaz.</li>
                       <li><strong>Eşya Bilgileri:</strong> Eşya adı, kategori, açıklama, opsiyonel fotoğraf ve QR tasarım ayarları.</li>
-                      <li><strong>Tarama ve İletişim Verileri:</strong> QR tarandığında cihaz türü (Mobil/Masaüstü), yaklaşık şehir (IP bazlı genel bölge), bulan kişinin gönderdiği anonim mesajlar ve isteğe bağlı paylaşılan konum bilgileri.</li>
+                      <li><strong>Tarama ve İletişim Verileri:</strong> QR tarandığında cihaz türü (Mobil/Masaüstü), yaklaşık şehir (IP bazlı genel bölge), bulan kişinin gönderdiği anonim mesajlar ve isteğe bağlı paylaşılan konum bilgileri. Bulan kişi ilk yanıt bildirimini almak isterse e-posta adresi sohbetle birlikte saklanır; eşya sahibine gösterilmez. Sohbet silindiğinde sohbet kaydındaki adres de silinir; gönderim kuyruğundaki kayıtlar teknik saklama süresine tabidir.</li>
                     </ul>
                   </section>
 
@@ -113,6 +113,7 @@ export default function PrivacyPolicyPage() {
                     <ul className="list-disc pl-5 space-y-1">
                       <li>QR taramaları ve mesajlar için site içi bildirim oluşturmak. Tercihiniz açıksa yeni konuşmaların yalnızca ilk mesajı için, aynı adrese 15 dakikada en fazla 1 ve 24 saatte en fazla 10 bildirim e-postası göndermek; QR taramalarında ve sonraki mesajlarda e-posta göndermemek.</li>
                       <li>Yeni hesabın e-posta adresini doğrulamak ve talebiniz üzerine şifre sıfırlama bağlantısı göndermek. Şifre sıfırlama talepleri aynı adres için 60 saniyede bir e-posta ile sınırlıdır.</li>
+                      <li>Bulan kişi isteğe bağlı e-posta adresini bırakırsa sahibin ilk cevabında, kişiye özel sohbet bağlantısını içeren tek bir bildirim göndermek. Sonraki cevaplarda e-posta gönderilmez. Kötüye kullanımı önlemek için aynı adrese 15 dakikada en fazla 1, 24 saatte en fazla 10 bulan kişi bildirimi gönderilir. Özel bağlantıyı elinde bulunduran kişi sohbete erişebilir; sohbet silindiğinde erişim sona erer.</li>
                       <li>Bulan kişi ile aranızda güvenli ve anonim sohbet oturumu sağlamak.</li>
                       <li>QR kod tarama istatistiklerini ve güvenlik loglarını yönetmek.</li>
                       <li>Spam, bot saldırıları ve kötüye kullanımı engellemek.</li>

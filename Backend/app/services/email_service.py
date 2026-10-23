@@ -319,4 +319,18 @@ class EmailService:
         return self._get_base_template("Yeni Mesajınız Var", f"'{item_name}' için yeni bir mesajınız var.", content)
 
 
+    def render_finder_reply_email(self, chat_url: str) -> str:
+        safe_url = html.escape(chat_url, quote=True)
+        content = f"""
+        <h2>Eşya sahibi yanıtladı</h2>
+        <p>Mesaj gönderdiğiniz eşyanın sahibi sohbetinize ilk yanıtını yazdı.</p>
+        <div style="text-align: center;"><a href="{safe_url}" class="btn">Sohbete dön →</a></div>
+        <p>Bu e-postayı saklayarak aynı sohbete daha sonra da dönebilirsiniz.
+        Sonraki mesajlarda ayrıca e-posta gönderilmez.</p>
+        <p>Bu bağlantı sohbetinize erişim sağlar; başkalarıyla paylaşmayın.
+        Sohbet silindiğinde bağlantı çalışmaz. E-posta adresiniz eşya sahibine gösterilmez.</p>
+        """
+        return self._get_base_template("Eşya sahibi yanıtladı", "Sohbetinize geri dönebilirsiniz.", content)
+
+
 email_service = EmailService()
